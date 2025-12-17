@@ -1,0 +1,1096 @@
+
+<!DOCTYPE html>
+<html lang="en" class="bg-[#030303]">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TECHNIRMAAN // THE CODING OS</title>
+    <meta name="description" content="The AI-Native platform for competitive programming, career architecture, and algorithmic mastery.">
+
+    <!-- FONTS -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- ICONS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <!-- TAILWIND CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Space Grotesk', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                        inter: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        void: '#030303',
+                        neon: '#00FF94',
+                        cyber: '#7B61FF',
+                        alert: '#FF2E2E',
+                        gold: '#FFD700',
+                    },
+                    animation: {
+                        'spin-slow': 'spin 20s linear infinite',
+                        'ticker': 'ticker 40s linear infinite',
+                    },
+                    keyframes: {
+                        ticker: {
+                            '0%': { transform: 'translateX(0)' },
+                            '100%': { transform: 'translateX(-50%)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- LIBRARIES -->
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+    <script src="https://unpkg.com/@studio-freight/lenis@1.0.42/dist/lenis.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        /* --- CORE VISUALS --- */
+        :root { --cursor-size: 20px; --cursor-hover-size: 80px; }
+        body { cursor: none; overflow-x: hidden; background-color: #030303; color: #EDEDED; }
+
+        /* Noise Overlay */
+        .noise { position: fixed; inset: 0; width: 100%; height: 100%; background: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.04'/%3E%3C/svg%3E"); pointer-events: none; z-index: 999; mix-blend-mode: overlay; }
+
+        /* Custom Cursor */
+        #cursor { position: fixed; top: 0; left: 0; width: var(--cursor-size); height: var(--cursor-size); border: 1px solid rgba(255, 255, 255, 0.5); border-radius: 50%; pointer-events: none; z-index: 10000; transform: translate(-50%, -50%); transition: width 0.3s, height 0.3s, background-color 0.3s; mix-blend-mode: difference; }
+        #cursor.hovered { width: var(--cursor-hover-size); height: var(--cursor-hover-size); background-color: rgba(255, 255, 255, 0.1); border-color: transparent; backdrop-filter: blur(2px); }
+        #cursor-dot { position: fixed; top: 0; left: 0; width: 4px; height: 4px; background-color: #00FF94; border-radius: 50%; pointer-events: none; z-index: 10001; transform: translate(-50%, -50%); }
+
+        /* Fluid Canvas */
+        #fluid-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; opacity: 0.6; pointer-events: none; }
+
+        /* Glassmorphism */
+        .glass { background: rgba(255, 255, 255, 0.02); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1); }
+        .glass-high { background: rgba(10, 10, 10, 0.6); backdrop-filter: blur(24px); border: 1px solid rgba(255, 255, 255, 0.08); }
+
+        /* 3D Elements */
+        .scene { width: 200px; height: 200px; perspective: 600px; }
+        .cube { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; transform: translateZ(-100px); }
+        .cube__face { position: absolute; width: 200px; height: 200px; border: 2px solid #7B61FF; background: rgba(123, 97, 255, 0.1); display: flex; justify-content: center; align-items: center; font-size: 40px; font-weight: bold; color: white; box-shadow: 0 0 20px rgba(123, 97, 255, 0.2); }
+        .cube__face--front { transform: rotateY(0deg) translateZ(100px); } .cube__face--right { transform: rotateY(90deg) translateZ(100px); } .cube__face--back { transform: rotateY(180deg) translateZ(100px); } .cube__face--left { transform: rotateY(-90deg) translateZ(100px); } .cube__face--top { transform: rotateX(90deg) translateZ(100px); } .cube__face--bottom { transform: rotateX(-90deg) translateZ(100px); }
+
+        /* Skill Tree */
+        .skill-path { fill: none; stroke: #333; stroke-width: 4; }
+        .skill-path-active { fill: none; stroke: #00FF94; stroke-width: 4; stroke-dasharray: 2000; stroke-dashoffset: 2000; filter: drop-shadow(0 0 10px #00FF94); }
+
+        /* Dashboard Tilt */
+        .dashboard-tilt { transform: perspective(2000px) rotateX(20deg) scale(0.9); transform-origin: center bottom; transition: transform 0.5s ease-out; }
+        .dashboard-tilt:hover { transform: perspective(2000px) rotateX(0deg) scale(1); }
+
+        /* Keyboards & Nexus */
+        .key { transition: all 0.1s; box-shadow: 0 4px 0 #333; }
+        .key.active { transform: translateY(4px); box-shadow: 0 0 0 #333; background: #00FF94; color: black; box-shadow: 0 0 20px #00FF94; }
+        .nexus-orb { transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+
+        /* Code Syntax */
+        .token.keyword { color: #ff79c6; } .token.function { color: #8be9fd; } .token.string { color: #f1fa8c; } .token.comment { color: #6272a4; font-style: italic; }
+
+        /* Loader */
+        #preloader { position: fixed; inset: 0; background: #000; z-index: 20000; display: flex; justify-content: center; align-items: center; font-family: 'JetBrains Mono', monospace; }
+        
+        /* Utility */
+        .magnetic-btn { display: inline-block; transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+        /* --- ROBUST LOGO STYLES --- */
+.logo-wrapper { 
+    display: flex; 
+    align-items: center; 
+    gap: 12px; 
+    text-decoration: none;
+}
+
+/* 1. THE SVG MARK (S Icon) */
+.logo-mark { 
+    width: 36px; 
+    height: 36px; 
+    flex-shrink: 0; 
+}
+.logo-mark path {
+    stroke-dasharray: 400;
+    stroke-dashoffset: 400;
+    fill: none;
+    stroke-width: 14; 
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    animation: draw-in 1.5s cubic-bezier(0.5, 0, 0.5, 1) forwards;
+}
+
+/* 2. TEXT CONTAINER */
+.logo-wordmark { 
+    display: flex; 
+    flex-direction: column; 
+    justify-content: center;
+    line-height: 1;
+}
+
+/* 3. SKILA.ai ROW */
+.logo-mainline { 
+    display: flex; 
+    align-items: baseline; 
+    font-family: 'Space Grotesk', sans-serif; 
+    font-weight: 700; 
+    font-size: 24px; 
+    letter-spacing: -0.03em; 
+    color: white;
+}
+
+/* 4. THE MAGIC 'i' ANIMATION */
+/* We animate the opacity of the whole suffix */
+.logo-suffix {
+    color: #888;
+    opacity: 0;
+    animation: text-reveal 0.5s ease-out forwards 0.8s;
+}
+
+/* The container for the 'i' */
+.logo-char-i {
+    position: relative;
+    display: inline-block;
+}
+
+/* The Green Dot (Pseudo-element) */
+.logo-char-i::after {
+    content: '';
+    position: absolute;
+    /* Centers horizontally relative to the letter width */
+    left: 59.5%;
+    transform: translateX(-50%);
+    
+    /* Start high up */
+    top: -10px; 
+    
+    width: 4px;
+    height: 4px;
+    background-color: #00FF94;
+    border-radius: 50%;
+    opacity: 0;
+    
+    /* The Drop Animation */
+    animation: dot-fall 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards 1.2s;
+}
+
+/* 5. SUBTITLE */
+.logo-tagline { 
+    font-size: 10px; 
+    color: #555; 
+    font-family: 'JetBrains Mono', monospace; 
+    font-weight: 500;
+    margin-top: 4px; 
+    letter-spacing: 0.1em;
+    opacity: 0;
+    animation: fade-up 0.5s ease-out forwards 1.4s;
+}
+
+/* ANIMATIONS */
+@keyframes draw-in { to { stroke-dashoffset: 0; } }
+@keyframes text-reveal { from { opacity: 0; transform: translateX(-5px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes fade-up { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+/* The Dot Drop Keyframes */
+@keyframes dot-fall {
+    0% { top: -15px; opacity: 0; }
+    60% { top: 6px; opacity: 1; } /* Overshoot slightly for impact */
+    100% { top: 4px; opacity: 1; } /* Settle perfectly on the stem */
+}
+    </style>
+</head>
+<body>
+
+    <!-- VISUAL LAYERS -->
+    <div class="noise"></div>
+    <div id="cursor"></div>
+    <div id="cursor-dot"></div>
+    <canvas id="fluid-canvas"></canvas>
+    <canvas id="starfield" class="fixed top-0 left-0 w-full h-full z-0 opacity-30 pointer-events-none"></canvas>
+
+    <!-- 1. BOOT SEQUENCE (REMOVED) -->
+
+    <!-- NAVBAR -->
+    <nav class="fixed top-0 w-full z-50 px-6 py-4 transition-all duration-300" id="navbar">
+        <div class="max-w-7xl mx-auto flex justify-between items-center glass rounded-full px-6 py-3">
+            <a href="https://technirmaan.live" class="logo-wrapper group hover-sound">
+    <!-- The Mark (S Icon) -->
+    <div class="logo-mark">
+        <svg viewBox="180 200 600 600" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <linearGradient id="navLogoGrad" x1="0" x2="1" y1="0" y2="1">
+                    <stop offset="0%" stop-color="#00FF94"/>
+                    <stop offset="100%" stop-color="#7B61FF"/>
+                </linearGradient>
+            </defs>
+            <path stroke="url(#navLogoGrad)" d="M0 0 C12.44795096 11.15193612 25.209924 26.49916535 26.7421875 43.85644531 C26.93179549 51.49066179 26.236526 57.76844022 21.1484375 63.75097656 C14.29280134 70.0736008 5.27434454 69.52993902 -3.45703125 69.52783203 C-5.49173017 69.53221716 -7.5242755 69.56864548 -9.55859375 69.60644531 C-18.14831286 69.63200995 -23.10236282 69.23406072 -29.5 63.29785156 C-30.01433594 62.67394531 -30.52867187 62.05003906 -31.05859375 61.40722656 C-31.63867188 60.71242188 -32.21875 60.01761719 -32.81640625 59.30175781 C-34.4100245 57.26711498 -35.92582544 55.19337705 -37.43359375 53.09472656 C-44.86753252 43.15037392 -55.763018 36.58908709 -68.06640625 34.40332031 C-82.00493749 32.99153982 -95.14293339 34.40344299 -106.49609375 43.15722656 C-113.84092745 49.79045007 -118.20904961 56.6681874 -118.87109375 66.62988281 C-119.40021676 80.49483979 -117.03175699 90.70670264 -107.49609375 101.15722656 C-102.60981911 106.30604731 -97.62113337 111.27177657 -92.18359375 115.84472656 C-81.65027014 124.96504335 -74.36366647 139.40510018 -72.49609375 153.15722656 C-71.65901004 166.901601 -71.65901004 166.901601 -74.49609375 171.15722656 C-83.10650834 170.73477779 -91.01635779 169.28947525 -99.30859375 166.96972656 C-100.4471582 166.65583984 -101.58572266 166.34195313 -102.75878906 166.01855469 C-111.28613295 163.61409145 -119.43482192 160.86388701 -127.49609375 157.15722656 C-128.66914063 156.62484375 -129.8421875 156.09246094 -131.05078125 155.54394531 C-154.43275022 144.41576533 -171.50401018 127.74589403 -181.28125 103.61425781 C-189.64889096 79.80280363 -188.20222315 53.93549868 -177.49609375 31.15722656 C-172.32524034 20.77417359 -165.72074162 12.27906633 -157.49609375 4.15722656 C-156.60921875 3.27164062 -155.72234375 2.38605469 -154.80859375 1.47363281 C-113.92382881 -37.56894068 -41.95830224 -36.37228731 0 0 Z" transform="translate(408.49609375,363.8427734375)"/>
+            <path stroke="url(#navLogoGrad)" d="M0 0 C6.34498414 -0.76650815 12.32105685 1.05255799 18.4375 2.625 C19.50355469 2.89715332 20.56960938 3.16930664 21.66796875 3.44970703 C41.10643665 8.54115356 59.43172211 16.04861213 75 29 C75.88429688 29.7321875 76.76859375 30.464375 77.6796875 31.21875 C94.28485334 45.55269255 105.96671454 65.91626071 108 88 C109.51108543 112.50639352 103.601609 135.85134046 87.07617188 154.66601562 C84.78356142 157.17789122 82.40354185 159.59478321 80 162 C79.14664063 162.8765625 78.29328125 163.753125 77.4140625 164.65625 C55.25012496 186.2211622 22.93540443 193.3964399 -6.99414062 193.30273438 C-37.11338155 192.78836404 -66.24524374 180.99860186 -87.55322266 159.52441406 C-94.89988063 151.78352098 -99.60694275 142.61723343 -104 133 C-104.38542969 132.19820312 -104.77085937 131.39640625 -105.16796875 130.5703125 C-107.24806212 124.14448415 -107.13256511 115.48193571 -105.0546875 109.09375 C-102.09187852 103.50354437 -98.75965606 99.8763342 -92.6171875 97.92578125 C-86.93905656 96.57815427 -81.24587523 96.631846 -75.4375 96.625 C-74.33986328 96.60050781 -73.24222656 96.57601562 -72.11132812 96.55078125 C-65.48794966 96.5268269 -61.27986492 96.87680652 -56 101 C-54.18216476 103.0728257 -52.62503853 105.01116308 -51.0625 107.25 C-50.20328809 108.41577064 -49.33998551 109.5785372 -48.47265625 110.73828125 C-47.84447998 111.57866943 -47.84447998 111.57866943 -47.20361328 112.43603516 C-38.10721505 124.25581752 -24.53717575 131.26811555 -10 134 C-7.05588512 134.28265107 -4.14386726 134.33446268 -1.1875 134.3125 C-0.39923828 134.30758545 0.38902344 134.3026709 1.20117188 134.29760742 C12.99441054 134.06179102 24.41558262 130.51755536 33.25 122.4375 C42.20883978 112.89715337 44.59170196 102.06923591 44.3359375 89.46484375 C43.41635524 71.61658807 28.72977732 57.17197753 16.375 45.5625 C5.98468673 35.32240812 -1.81812468 21.38973764 -2.25 6.625 C-2 3 -2 3 0 0 Z" transform="translate(328,448)"/>
+        </svg>
+    </div>
+    
+    <!-- Text -->
+    <div class="logo-wordmark">
+        <div class="logo-mainline">
+            SKILA<span class="logo-suffix">.a<span class="logo-char-i">ı</span></span>
+        </div>
+        <div class="logo-tagline">// TECHNIRMAAN</div>
+    </div>
+</a>
+            <div class="hidden md:flex gap-8 text-xs font-mono text-gray-400">
+                <a href="#compiler" class="hover:text-white transition-colors hover-sound">RUNTIME</a>
+                <a href="#learning" class="hover:text-white transition-colors hover-sound">LEARNING</a>
+                <a href="#arena" class="hover:text-white transition-colors hover-sound">ARENA</a>
+                <a href="#resume" class="hover:text-white transition-colors hover-sound">CAREER</a>
+            </div>
+            <a href="https://technirmaan.live/login" class="magnetic-btn px-6 py-2 bg-white text-black text-xs font-bold rounded-full hover:bg-[#00FF94] transition-colors click-sound">LOGIN_</a>
+        </div>
+    </nav>
+
+    <div id="smooth-wrapper">
+        <div id="smooth-content">
+
+          <!-- 2. HERO: BOOT SEQUENCE -->
+<section class="min-h-screen flex flex-col justify-center items-center relative z-10 px-4">
+    <div class="text-center space-y-8 max-w-5xl">
+        <!-- Tag: Establishing Authority/Social Proof -->
+        <div class="inline-block border border-[#00FF94]/30 bg-[#00FF94]/5 px-4 py-2 rounded-full mb-4 opacity-0 reveal-hero">
+            <span class="font-mono text-[#00FF94] text-xs font-semibold tracking-wide">
+                ● THE PREFERRED PLATFORM FOR PLACEMENT PREP
+            </span>
+        </div>
+        
+        <!-- Main Title: Clear, Professional, Outcome-Focused -->
+        <h1 class="text-5xl md:text-7xl font-bold tracking-tight leading-tight opacity-0 reveal-hero">
+            MASTER ALGORITHMS.<br>
+            <span class="text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-500">BUILD YOUR CAREER.</span>
+        </h1>
+        
+        <!-- Subtitle: Detailed explanation of the product offering -->
+        <p class="font-sans text-gray-400 text-base md:text-lg max-w-3xl mx-auto leading-relaxed opacity-0 reveal-hero">
+            Technirmaan is a comprehensive coding environment designed to take you from a beginner to an industry-ready engineer. 
+            Access <span class="text-white">500+ curated problems</span>, participate in <span class="text-white">live national contests</span>, 
+            and utilize our cloud-based tools to crack coding interviews at top product-based companies.
+        </p>
+        
+        <!-- CTA: Professional Call to Action -->
+        <div class="pt-8 opacity-0 reveal-hero flex flex-col md:flex-row gap-6 justify-center items-center">
+            <a href="https://technirmaan.live" class="magnetic-btn group relative px-8 py-4 bg-[#00FF94] text-black font-bold rounded-full overflow-hidden w-64 text-center click-sound shadow-[0_0_20px_rgba(0,255,148,0.3)]">
+                <span class="relative z-10 group-hover:text-white transition-colors">START PRACTICING NOW</span>
+                <div class="absolute inset-0 bg-black translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+            </a>
+            <p class="text-xs text-gray-500 font-mono mt-4 md:mt-0">
+                // No credit card required. Free for students.
+            </p>
+        </div>
+    </div>
+</section>
+
+          <!-- 3. INFINITE TICKER -->
+<div class="bg-[#00FF94] text-black py-3 overflow-hidden relative z-20 border-y border-[#00FF94]">
+    <div class="whitespace-nowrap animate-ticker font-mono text-sm font-bold tracking-wider flex gap-12">
+        <!-- Practical, Syllabus-oriented keywords -->
+        <span class="flex items-center gap-2">● DATA STRUCTURES & ALGORITHMS</span>
+        <span class="flex items-center gap-2">● SYSTEM DESIGN</span>
+        <span class="flex items-center gap-2">● MOCK INTERVIEWS</span>
+        <span class="flex items-center gap-2">● PYTHON, JAVA, C++ SUPPORT</span>
+        <span class="flex items-center gap-2">● COMPETITIVE PROGRAMMING</span>
+        <span class="flex items-center gap-2">● DATA STRUCTURES & ALGORITHMS</span>
+        <span class="flex items-center gap-2">● SYSTEM DESIGN</span>
+        <span class="flex items-center gap-2">● MOCK INTERVIEWS</span>
+    </div>
+</div>
+<!-- 4. GLOBAL NETWORK (3D GLOBE) -->
+<section class="h-[80vh] relative z-10 flex items-center justify-center overflow-hidden">
+    <div id="globe-container" class="absolute inset-0 z-0 opacity-50"></div>
+    <div class="relative z-10 text-center pointer-events-none mix-blend-difference px-4">
+        <h2 class="text-4xl md:text-7xl font-bold text-white tracking-tight">JOIN A NATIONAL<br>COMMUNITY</h2>
+        <p class="font-mono text-[#00FF94] mt-6 text-lg tracking-wide border border-[#00FF94]/30 inline-block px-6 py-2 rounded-full bg-black/50 backdrop-blur-md">
+            COMPETE WITH THOUSANDS OF PEERS
+        </p>
+    </div>
+</section>
+<!-- 5. COMPILER (STICKY IDE) -->
+<section id="compiler" class="min-h-[150vh] relative z-20 bg-void">
+    <div class="sticky top-0 h-screen flex flex-col justify-center items-center px-4 overflow-hidden">
+        <!-- Background Glow -->
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-[120px] pointer-events-none"></div>
+        
+        <div class="relative z-10 text-center mb-12 max-w-3xl">
+            <!-- Headline: Clear Benefit -->
+            <h2 class="text-3xl md:text-5xl font-bold mb-6">A PROFESSIONAL IDE<br>IN YOUR <span class="text-[#00FF94]">BROWSER</span></h2>
+            
+            <!-- Detailed Explanation -->
+            <p class="text-gray-400 text-base md:text-lg leading-relaxed">
+                Eliminate the hassle of local environment setup. Technirmaan provides a pre-configured, cloud-based development environment that supports 
+                <strong>C++, Java, and Python</strong> out of the box. Focus entirely on logic and syntax without worrying about compiler errors or installation issues.
+            </p>
+        </div>
+
+        <div class="w-full max-w-4xl glass-high rounded-xl overflow-hidden border border-gray-800 shadow-2xl transform translate-y-20 opacity-0" id="ide-window">
+            <div class="bg-[#0A0A0A] px-4 py-3 flex items-center gap-4 border-b border-gray-800">
+                <div class="flex gap-2"><div class="w-3 h-3 rounded-full bg-red-500"></div><div class="w-3 h-3 rounded-full bg-yellow-500"></div><div class="w-3 h-3 rounded-full bg-green-500"></div></div>
+                <!-- Meaningful Filename -->
+                <div class="font-mono text-xs text-gray-500 flex-1 text-center">Arrays_Target_Sum.cpp</div>
+                <div class="px-3 py-1 rounded bg-green-900/30 text-green-400 text-[10px] font-mono font-bold tracking-wider">CLOUD CONNECTED</div>
+            </div>
+            <div class="bg-[#050505] p-6 font-mono text-sm md:text-base min-h-[300px] relative">
+                <div class="absolute left-4 top-6 text-gray-700 text-right select-none">1<br>2<br>3<br>4<br>5</div>
+                <div class="pl-8 text-gray-300" id="typewriter-code"></div>
+                <span class="inline-block w-2 h-5 bg-[#00FF94] animate-pulse ml-1 align-middle"></span>
+            </div>
+            <div class="bg-[#0A0A0A] border-t border-gray-800 p-4 font-mono text-xs">
+                <div class="text-gray-500 mb-2">> Compiling on Remote Server...</div>
+                <div id="terminal-success" class="text-[#00FF94] hidden">
+                    ✔ COMPILATION SUCCESSFUL (0.02s)<br>
+                    ✔ 5/5 TEST CASES PASSED
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+           <!-- 6. PERFORMANCE BENCHMARK -->
+<section id="bench" class="py-32 px-6 bg-black relative overflow-hidden">
+    <div class="max-w-4xl mx-auto">
+        <!-- Headline: Direct Problem Solving -->
+        <h2 class="text-3xl md:text-5xl font-bold mb-8 text-center leading-tight">
+            LOW-END DEVICE?<br>
+            <span class="text-alert">NO PROBLEM.</span>
+        </h2>
+        
+        <!-- Explanation Text -->
+        <p class="text-gray-400 text-center mb-16 max-w-2xl mx-auto text-base md:text-lg">
+            Traditional IDEs like VS Code or IntelliJ can be heavy and slow on standard student laptops. 
+            Technirmaan offloads the execution to high-performance cloud servers, ensuring your code runs instantly, every time.
+        </p>
+        
+        <div class="space-y-12">
+            <!-- Visual Comparison with Clear Labels -->
+            <div>
+                <div class="flex justify-between text-xs font-mono text-gray-500 mb-2 tracking-wider">
+                    <span>TYPICAL LOCAL ENVIRONMENT (VS CODE)</span>
+                    <span>STATUS: HIGH MEMORY USAGE...</span>
+                </div>
+                <div class="w-full h-12 bg-gray-900 rounded-lg overflow-hidden relative border border-gray-800">
+                    <div id="bar-local" class="h-full bg-red-600/50 w-0 flex items-center justify-end px-4 text-xs font-bold text-white relative">
+                        <div class="absolute right-0 top-0 h-full w-2 bg-red-400 blur-sm"></div>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <div class="flex justify-between text-xs font-mono text-[#00FF94] mb-2 tracking-wider">
+                    <span>TECHNIRMAAN CLOUD ENGINE</span>
+                    <span id="skila-status">OPTIMIZED</span>
+                </div>
+                <div class="w-full h-12 bg-gray-900 rounded-lg overflow-hidden relative border border-[#00FF94]/30">
+                    <div id="bar-skila" class="h-full bg-[#00FF94] w-0 flex items-center justify-end px-4 text-xs font-bold text-black relative shadow-[0_0_30px_#00FF94]">
+                        <span id="skila-time" class="hidden">INSTANT EXECUTION</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+        <!-- 7. AI CODE REVIEW -->
+<section id="codereview" class="py-32 px-6 bg-[#050505] relative overflow-hidden">
+    <div class="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+        <div>
+            <!-- Headline: Focus on Optimization & Interviews -->
+            <h2 class="text-3xl md:text-5xl font-bold mb-6 leading-tight">
+                REAL-TIME <br>
+                <span class="text-cyber">PERFORMANCE ANALYSIS</span>
+            </h2>
+            
+            <!-- Detailed Explanation -->
+            <p class="text-gray-400 text-base md:text-lg mb-8 leading-relaxed">
+                In technical interviews, a working solution is not enough—it must be optimized. 
+                Our AI engine acts as your personal mentor, analyzing your code's <strong>Time and Space Complexity</strong> 
+                in real-time. It identifies inefficient loops and suggests optimized approaches to ensure your solution 
+                meets industry standards.
+            </p>
+            
+            <!-- Visual Data Points -->
+            <div class="flex gap-4">
+                <div class="p-4 bg-gray-900 rounded border border-gray-800 text-center w-40">
+                    <div class="text-2xl font-bold text-red-500">O(n²)</div>
+                    <div class="text-xs text-gray-500 font-mono mt-1 tracking-wide">BRUTE FORCE DETECTED</div>
+                </div>
+                <div class="p-4 bg-gray-900 rounded border border-gray-800 text-center w-40">
+                    <div class="text-2xl font-bold text-[#00FF94]">O(n)</div>
+                    <div class="text-xs text-gray-500 font-mono mt-1 tracking-wide">OPTIMAL SOLUTION</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- The Code Card (Visual) -->
+        <div class="relative glass rounded-xl p-6 font-mono text-sm border border-gray-800" id="review-card">
+            <div class="absolute top-0 left-0 w-full h-1 bg-[#00FF94] shadow-[0_0_20px_#00FF94] scan-line hidden"></div>
+            <div id="review-code" class="text-gray-300 leading-7">
+                <span class="text-purple-400">for</span> i <span class="text-purple-400">in</span> range(n):<br>&nbsp;&nbsp;<span class="text-purple-400">for</span> j <span class="text-purple-400">in</span> range(n):<br>&nbsp;&nbsp;&nbsp;&nbsp;check(i, j)
+            </div>
+            <div id="review-tooltip" class="absolute top-10 right-[-20px] bg-red-900/90 text-white text-xs p-3 rounded border border-red-500 hidden backdrop-blur-md shadow-xl">
+                ⚠ Nested Loops Detected (High Latency)
+            </div>
+        </div>
+    </div>
+</section>
+
+           <!-- 8. LEARNING PATHS (Detailed) -->
+<section id="learning" class="py-32 relative bg-void">
+    <div class="text-center mb-16 px-4">
+        <!-- Headline: Clarity on Curriculum -->
+        <h2 class="text-4xl md:text-6xl font-bold mb-6">STRUCTURED <span class="text-[#00FF94]">LEARNING ROADMAPS</span></h2>
+        <!-- Explanation -->
+        <p class="text-gray-400 text-lg max-w-2xl mx-auto">
+            Stop searching for random tutorials. Follow a curated, step-by-step syllabus designed 
+            to cover every topic required for placement exams and technical interviews.
+        </p>
+    </div>
+
+    <div class="max-w-4xl mx-auto relative h-[1000px]">
+        <!-- Connection Line -->
+        <svg class="absolute top-0 left-1/2 -translate-x-1/2 h-full w-20 z-0" overflow="visible">
+            <path d="M 40 0 L 40 200 L 40 400 L 40 600 L 40 800" class="skill-path" stroke="#222" />
+            <path id="skill-path-active" d="M 40 0 L 40 200 L 40 400 L 40 600 L 40 800" class="skill-path-active" stroke-dashoffset="1000" />
+        </svg>
+        
+        <!-- Module 1: Foundation -->
+        <div class="skill-node absolute top-[180px] left-1/2 -translate-x-1/2 w-full flex justify-center items-center opacity-20" data-index="1">
+            <div class="w-16 h-16 bg-black border-2 border-[#00FF94] rounded-full flex items-center justify-center z-10 shadow-[0_0_30px_rgba(0,255,148,0.2)]">
+                <i class="fas fa-database text-[#00FF94] text-xl"></i>
+            </div>
+            <div class="absolute left-[60%] p-5 glass rounded-xl border-l-4 border-[#00FF94] w-72">
+                <div class="text-[#00FF94] text-xs font-bold uppercase tracking-wider mb-1">STEP 01: FOUNDATION</div>
+                <div class="font-bold text-lg text-white mb-2">Data Structures</div>
+                <div class="text-sm text-gray-400 leading-snug">
+                    Master the basics: Arrays, Linked Lists, Stacks, and Queues. Build the core logic needed for problem-solving.
+                </div>
+            </div>
+        </div>
+
+        <!-- Module 2: Logic -->
+        <div class="skill-node absolute top-[380px] left-1/2 -translate-x-1/2 w-full flex justify-center items-center opacity-20" data-index="2">
+            <div class="w-16 h-16 bg-black border-2 border-cyber rounded-full flex items-center justify-center z-10 shadow-[0_0_30px_rgba(123,97,255,0.2)]">
+                <i class="fas fa-code-branch text-cyber text-xl"></i>
+            </div>
+            <div class="absolute right-[60%] p-5 glass rounded-xl border-r-4 border-cyber w-72 text-right">
+                <div class="text-cyber text-xs font-bold uppercase tracking-wider mb-1">STEP 02: ADVANCED LOGIC</div>
+                <div class="font-bold text-lg text-white mb-2">Core Algorithms</div>
+                <div class="text-sm text-gray-400 leading-snug">
+                    Learn to optimize. Cover Sorting, Searching, Recursion, and Dynamic Programming to solve complex problems efficiently.
+                </div>
+            </div>
+        </div>
+
+        <!-- Module 3: Architecture -->
+        <div class="skill-node absolute top-[580px] left-1/2 -translate-x-1/2 w-full flex justify-center items-center opacity-20" data-index="3">
+            <div class="w-16 h-16 bg-black border-2 border-orange-500 rounded-full flex items-center justify-center z-10 shadow-[0_0_30px_rgba(249,115,22,0.2)]">
+                <i class="fas fa-server text-orange-500 text-xl"></i>
+            </div>
+            <div class="absolute left-[60%] p-5 glass rounded-xl border-l-4 border-orange-500 w-72">
+                <div class="text-orange-500 text-xs font-bold uppercase tracking-wider mb-1">STEP 03: ARCHITECTURE</div>
+                <div class="font-bold text-lg text-white mb-2">System Design</div>
+                <div class="text-sm text-gray-400 leading-snug">
+                    Prepare for senior roles. Understand Scalability, Load Balancing, and Database design for large-scale applications.
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+<!-- 9. RAPID QUIZZES -->
+<section class="h-screen flex flex-col justify-center items-center bg-void relative overflow-hidden perspective-1000" id="quiz-section">
+    <div class="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-purple-900/20 to-transparent"></div>
+    
+    <!-- Headline: Specific Utility -->
+    <h2 class="text-3xl md:text-5xl font-bold mb-12 relative z-10 text-center">
+        TECHNICAL <span class="text-cyber">APTITUDE DRILLS</span>
+    </h2>
+    
+    <!-- Explanation (Optional, but good for context) -->
+    <p class="text-gray-400 text-center max-w-lg mb-10 relative z-10">
+        Prepare for the initial screening rounds of major tech companies. 
+        Practice objective questions on output prediction, debugging, and theory.
+    </p>
+
+    <div class="relative w-80 h-48" id="card-stack"></div>
+    
+    <!-- Feedback Text -->
+    <div id="quiz-feedback" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-7xl font-black opacity-0 z-20 pointer-events-none text-[#00FF94] whitespace-nowrap">
+        CORRECT ANSWER
+    </div>
+</section>
+           <!-- 10. FLOW STATE (WPM) -->
+<section class="py-32 bg-black flex justify-center items-center relative">
+    <div class="max-w-5xl w-full px-6">
+        <div class="flex flex-col md:flex-row justify-between items-end mb-12 gap-6">
+            <div>
+                <h2 class="text-4xl md:text-5xl font-bold mb-2">ASSESSMENT <span class="text-neon">METRICS</span></h2>
+                <p class="text-gray-400 text-lg max-w-lg">
+                    Online Assessments are timed. We track your <strong>typing speed (WPM)</strong> and <strong>coding accuracy</strong> 
+                    to help you improve efficiency during time-constrained tests.
+                </p>
+            </div>
+            <div class="text-right">
+                <div class="text-6xl font-mono font-bold text-white" id="wpm-counter">0</div>
+                <div class="text-xs text-gray-500 tracking-widest font-bold">AVG. WORDS PER MINUTE</div>
+            </div>
+        </div>
+        <div class="grid grid-cols-10 gap-2 perspective-1000" id="keyboard-grid"></div>
+    </div>
+</section>
+
+           <!-- 11. ARENA -->
+<section id="arena" class="py-32 bg-[#050505] relative overflow-hidden">
+    <div class="text-center mb-20 px-4">
+        <h2 class="text-5xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-800">
+            NATIONAL STANDINGS
+        </h2>
+        <p class="text-gray-400 mt-6 text-lg">
+            Benchmark your skills against thousands of developers from top universities across India.
+        </p>
+    </div>
+
+    <div class="flex flex-wrap justify-center gap-8 px-6 perspective-1000" id="arena-cards-container">
+        <!-- Rank Card -->
+        <div class="tilt-card w-80 h-96 glass rounded-2xl p-6 relative group cursor-pointer border border-white/5 hover:border-[#00FF94]/50 transition-colors opacity-0 translate-y-12">
+            <div class="absolute top-4 right-4 text-[#00FF94] border border-[#00FF94]/30 px-2 py-1 rounded text-[10px] font-bold tracking-wider">
+                <i class="fas fa-circle text-[8px] animate-pulse mr-1"></i> UPDATED LIVE
+            </div>
+            <div class="mt-8">
+                <div class="text-5xl font-bold text-white mb-2">#1</div>
+                <div class="text-sm text-gray-500 font-mono font-bold tracking-widest">ALL INDIA RANK</div>
+            </div>
+            <div class="mt-12 space-y-4 border-t border-white/10 pt-6">
+                <div class="flex justify-between items-center text-sm">
+                    <span class="text-gray-400">Top Performer</span>
+                    <span class="font-bold text-white">Aditya_K</span>
+                </div>
+                <div class="flex justify-between items-center text-sm">
+                    <span class="text-gray-400">Rating</span>
+                    <span class="font-bold text-[#00FF94]">2840</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Contest Card -->
+        <div class="tilt-card w-80 h-96 bg-[#0A0A0A] rounded-2xl p-6 relative group cursor-pointer border border-white/5 hover:border-cyber/50 transition-colors opacity-0 translate-y-12">
+            <div class="absolute top-4 right-4 text-cyber">
+                <i class="fas fa-users text-xl"></i>
+            </div>
+            <div class="mt-8">
+                <div class="text-2xl font-bold text-white mb-2">Weekly Contest #42</div>
+                <div class="text-sm text-gray-500 font-mono font-bold tracking-widest">UPCOMING EVENT</div>
+            </div>
+            <div class="mt-auto pt-16 space-y-3">
+                <div class="flex justify-between text-xs text-gray-400 mb-1">
+                    <span>Registration Status</span>
+                    <span class="text-cyber font-bold">OPEN</span>
+                </div>
+                <div class="h-1.5 w-full bg-gray-800 rounded-full overflow-hidden">
+                    <div class="h-full bg-cyber w-3/4"></div>
+                </div>
+                <p class="text-xs text-right text-gray-500">1,204 Students Registered</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+           <!-- 12. CODELABS -->
+<section id="codelabs" class="h-screen flex items-center bg-void px-6">
+    <div class="max-w-7xl mx-auto w-full grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+        <div class="space-y-8">
+            <!-- Headline: Broadening the Scope -->
+            <h2 class="text-4xl md:text-5xl font-bold leading-tight">
+                BEYOND ALGORITHMS:<br>
+                <span class="text-neon">CORE DEVELOPMENT</span>
+            </h2>
+            
+            <!-- Explanation -->
+            <p class="text-gray-400 text-lg leading-relaxed">
+                Modern software engineering requires more than just logic. Familiarize yourself with the 
+                essential building blocks of the web and backend systems. Technirmaan integrates 
+                concepts from <strong>Frontend, Databases, and Version Control</strong> into your learning path.
+            </p>
+
+            <!-- Code Snippet Visual -->
+            <div class="p-6 bg-[#111] rounded-xl border border-gray-800 font-mono text-sm shadow-lg">
+                <span class="text-gray-500">// Interactive Learning Modules</span><br>
+                <span class="text-cyber">.tech-stack</span> { <br>
+                &nbsp;&nbsp;mastery: <span class="text-neon">complete</span>;<br>
+                &nbsp;&nbsp;transform: <span class="text-white">rotateY(<span id="cube-deg">0</span>deg)</span>; <br>
+                }
+            </div>
+        </div>
+
+        <!-- 3D Cube (Kept exactly as is) -->
+        <div class="flex justify-center perspective-1000">
+            <div class="scene">
+                <div class="cube" id="interactive-cube">
+                    <div class="cube__face cube__face--front">HTML</div>
+                    <div class="cube__face cube__face--back">CSS</div>
+                    <div class="cube__face cube__face--right">JS</div>
+                    <div class="cube__face cube__face--left">API</div>
+                    <div class="cube__face cube__face--top">GIT</div>
+                    <div class="cube__face cube__face--bottom">DB</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+          <!-- 13. NEXUS ID -->
+<section id="nexus" class="py-32 bg-void relative overflow-hidden flex flex-col items-center">
+    <!-- Headline: The Value Proposition -->
+    <h2 class="text-4xl md:text-5xl font-bold mb-8 text-center">
+        UNIFIED <span class="text-gold">PROFESSIONAL PROFILE</span>
+    </h2>
+    
+    <!-- Explanation -->
+    <p class="text-gray-400 text-center max-w-2xl px-6 mb-16 text-lg">
+        Stop sending recruiters five different links. We aggregate your performance data from 
+        <strong>LeetCode, Codeforces, and GitHub</strong> into a single, verifiable digital portfolio 
+        that showcases your true potential.
+    </p>
+
+    <!-- Visual (Kept exactly as is) -->
+    <div class="relative w-[400px] h-[400px] flex items-center justify-center scale-75 md:scale-100">
+        <div class="absolute w-full h-full border border-white/10 rounded-full animate-[spin_10s_linear_infinite]"></div>
+        <div class="nexus-orb absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 bg-[#111] border border-gold rounded-full flex items-center justify-center text-gold shadow-[0_0_15px_#FFD700]">
+            <i class="fas fa-code"></i>
+        </div>
+        <div class="nexus-orb absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-12 h-12 bg-[#111] border border-blue-500 rounded-full flex items-center justify-center text-blue-500 shadow-[0_0_15px_#3B82F6]">
+            <i class="fas fa-chart-bar"></i>
+        </div>
+        <div class="w-32 h-32 bg-[#00FF94] rounded-full blur-[50px] absolute z-0 opacity-20" id="nexus-core-glow"></div>
+        <div class="w-24 h-24 bg-glass border border-[#00FF94] rounded-full flex items-center justify-center z-10 relative" id="nexus-core">
+            <span class="font-bold text-white text-xl">ID</span>
+        </div>
+    </div>
+    
+    <!-- Counter Label -->
+    <div class="mt-12 text-center">
+        <p class="text-gray-500 font-mono text-sm tracking-widest uppercase">Total Problems Solved (Aggregated)</p>
+        <div class="text-5xl font-mono font-bold text-white mt-2" id="nexus-counter">500</div>
+    </div>
+</section>
+
+          <!-- 14. THE ORACLE (Radar) -->
+<section class="py-32 px-6 bg-black flex justify-center">
+    <div class="max-w-5xl w-full grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
+        <div>
+            <!-- Headline -->
+            <h2 class="text-4xl md:text-5xl font-bold mb-6">
+                PERFORMANCE <span class="text-cyber">DIAGNOSTICS</span>
+            </h2>
+            
+            <!-- Detailed Explanation -->
+            <p class="text-gray-400 text-lg mb-8 leading-relaxed">
+                Understand your strengths and weaknesses before you step into the interview room. 
+                Our analytics engine visualizes your proficiency across key domains like 
+                <strong>Dynamic Programming, Graph Theory, and Greedy Algorithms</strong>, 
+                comparing your metrics against the national average.
+            </p>
+            
+            <ul class="space-y-4 text-sm font-mono text-gray-500">
+                <li class="flex items-center gap-3">
+                    <span class="w-2 h-2 bg-[#00FF94] rounded-full"></span> Identify Weak Topics Instantly
+                </li>
+                <li class="flex items-center gap-3">
+                    <span class="w-2 h-2 bg-cyber rounded-full"></span> Track Growth Over Time
+                </li>
+                <li class="flex items-center gap-3">
+                    <span class="w-2 h-2 bg-gray-500 rounded-full"></span> Compare with Batchmates
+                </li>
+            </ul>
+        </div>
+        
+        <!-- Chart -->
+        <div class="glass p-6 rounded-2xl border border-white/10 shadow-2xl">
+            <canvas id="radarChart"></canvas>
+        </div>
+    </div>
+</section>
+<!-- 15. UNIVERSITY DASHBOARD -->
+<section class="py-32 px-6 bg-void flex justify-center">
+    <div class="max-w-6xl w-full">
+        <div class="text-center mb-16">
+            <h2 class="text-4xl md:text-5xl font-bold">
+                INSTITUTIONAL <span class="text-cyber">ANALYTICS</span>
+            </h2>
+            <p class="text-gray-400 mt-4 max-w-2xl mx-auto">
+                A powerful command center for <strong>Colleges and Placement Cells</strong> to monitor student progress, 
+                identify top performers, and track batch-wise readiness statistics.
+            </p>
+        </div>
+
+        <!-- Dashboard Visual -->
+        <div class="dashboard-tilt w-full h-[600px] bg-[#0A0A0A] border border-gray-800 rounded-xl p-6 shadow-2xl relative overflow-hidden">
+            <!-- Header -->
+            <div class="flex justify-between items-center mb-8 border-b border-gray-800 pb-4">
+                <div class="font-mono text-[#00FF94] font-bold tracking-wider">IIT_BOMBAY_PLACEMENT_CELL</div>
+                <div class="flex gap-4 text-xs font-mono text-gray-500">
+                    <span>SERVER: ONLINE</span>
+                    <span>ACTIVE STUDENTS: 450</span>
+                </div>
+            </div>
+            
+            <!-- Grid Layout -->
+            <div class="grid grid-cols-3 gap-6 h-full">
+                <!-- Main Chart Area -->
+                <div class="col-span-2 grid grid-rows-2 gap-6">
+                    <div class="glass p-4 rounded border border-white/5 relative">
+                        <h3 class="text-xs text-gray-500 uppercase mb-4 tracking-widest font-bold">Daily Submission Velocity</h3>
+                        <div class="flex items-end gap-2 h-32 w-full px-2" id="dash-bars"></div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-6">
+                        <div class="glass p-4 rounded border border-white/5">
+                            <h3 class="text-xs text-gray-500 uppercase tracking-widest font-bold">Total Solved</h3>
+                            <div class="text-5xl font-bold text-white mt-4">12.4k</div>
+                            <div class="text-xs text-green-500 mt-2">▲ 12% this week</div>
+                        </div>
+                        <div class="glass p-4 rounded border border-white/5">
+                            <h3 class="text-xs text-gray-500 uppercase tracking-widest font-bold">Avg. Complexity</h3>
+                            <div class="text-5xl font-bold text-cyber mt-4">O(n)</div>
+                            <div class="text-xs text-gray-400 mt-2">Code Efficiency Score</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Sidebar Activity -->
+                <div class="glass p-4 rounded border border-white/5">
+                    <h3 class="text-xs text-gray-500 uppercase mb-4 tracking-widest font-bold">Live Activity Feed</h3>
+                    <div class="space-y-4 font-mono text-xs">
+                        <div class="flex justify-between text-green-400 border-b border-white/5 pb-2">
+                            <span>> Rohit_Sharma</span><span>ACCEPTED</span>
+                        </div>
+                        <div class="flex justify-between text-red-400 border-b border-white/5 pb-2">
+                            <span>> Priya_S</span><span>WRONG ANS</span>
+                        </div>
+                        <div class="flex justify-between text-green-400 border-b border-white/5 pb-2">
+                            <span>> Amit_K</span><span>ACCEPTED</span>
+                        </div>
+                        <div class="flex justify-between text-yellow-500 border-b border-white/5 pb-2">
+                            <span>> Rahul_V</span><span>COMPILING</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+          <!-- 16. RESUME & FOOTER -->
+<section id="resume" class="min-h-screen flex items-center justify-center relative bg-void overflow-hidden py-24">
+    <div class="max-w-6xl mx-auto w-full grid grid-cols-1 md:grid-cols-2 gap-16 px-6 items-center">
+        <!-- Visual (Kept exactly as is) -->
+        <div class="order-2 md:order-1 relative flex justify-center">
+            <div class="relative w-[350px] h-[500px] bg-white text-black mx-auto rounded shadow-2xl overflow-hidden transform -rotate-3 transition-transform hover:rotate-0 duration-500" id="resume-doc">
+                <div class="h-2 w-full bg-gray-200 animate-pulse"></div>
+                <div class="p-6 space-y-4 opacity-50 blur-[1px]" id="resume-content">
+                    <div class="flex gap-4 mb-6">
+                        <div class="w-16 h-16 bg-gray-300 rounded-full"></div>
+                        <div class="flex-1 space-y-2 pt-2">
+                            <div class="h-4 w-3/4 bg-gray-800 rounded"></div>
+                            <div class="h-3 w-1/2 bg-gray-400 rounded"></div>
+                        </div>
+                    </div>
+                    <div class="border-t border-gray-300 my-4"></div>
+                    <div class="space-y-3">
+                        <div class="h-3 w-full bg-gray-300 rounded"></div>
+                        <div class="h-3 w-full bg-gray-300 rounded"></div>
+                        <div class="h-3 w-5/6 bg-gray-300 rounded"></div>
+                    </div>
+                    <div class="mt-8 space-y-2">
+                        <div class="h-8 w-1/3 bg-blue-100 rounded"></div>
+                        <div class="h-3 w-full bg-gray-300 rounded"></div>
+                        <div class="h-3 w-full bg-gray-300 rounded"></div>
+                    </div>
+                </div>
+                <div class="absolute bottom-4 right-4 bg-black text-white px-3 py-1 text-xs font-bold rounded flex items-center gap-2">
+                    <i class="fas fa-check-circle text-[#00FF94]"></i> GENERATED
+                </div>
+            </div>
+        </div>
+
+        <!-- Text Content -->
+        <div class="order-1 md:order-2 space-y-8">
+            <h2 class="text-5xl font-bold leading-tight">
+                DATA-DRIVEN<br>
+                <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">RESUME BUILDER</span>
+            </h2>
+            <p class="text-gray-400 text-lg leading-relaxed">
+                Your code is your credential. Technirmaan automatically generates a professional, data-backed resume 
+                highlighting your <strong>Problems Solved, Contest Ranks, and Skill Metrics</strong>. 
+                Download a CV that recruiters trust.
+            </p>
+            <a href="https://technirmaan.live" class="inline-flex items-center gap-2 mt-4 text-white border-b border-white pb-1 hover:text-neon hover:border-neon transition-colors hover-sound text-lg group">
+                Build My Resume 
+                <span class="group-hover:translate-x-2 transition-transform">&rarr;</span>
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- FINAL FOOTER CTA -->
+<section class="h-screen relative flex flex-col justify-center items-center bg-black overflow-hidden">
+    <!-- Background Text -->
+    <h2 class="text-[12vw] font-black leading-none tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white via-gray-500 to-gray-900 opacity-10 select-none pointer-events-none">
+        TECHNIRMAAN
+    </h2>
+    
+    <!-- Central CTA -->
+    <div class="absolute inset-0 flex flex-col justify-center items-center z-10">
+        <p class="font-mono text-[#00FF94] mb-6 tracking-widest text-sm uppercase">
+            Start Your Journey Today
+        </p>
+        <a href="https://technirmaan.live" class="group relative px-12 py-6 bg-[#00FF94] text-black font-bold text-2xl md:text-4xl rounded-full overflow-hidden hover:scale-105 transition-transform duration-300 click-sound shadow-[0_0_40px_rgba(0,255,148,0.4)]">
+            <span class="relative z-10 group-hover:text-white mix-blend-difference">ENTER CONSOLE</span>
+            <div class="absolute inset-0 bg-black translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-in-out"></div>
+        </a>
+    </div>
+    
+    <!-- Footer Links -->
+    <div class="absolute bottom-8 w-full px-8 flex flex-col md:flex-row justify-between items-center text-xs font-mono text-gray-600 gap-4">
+        <div>© 2025 TECHNIRMAAN. ALL RIGHTS RESERVED.</div>
+        <div class="flex gap-6">
+            <a href="#" class="hover:text-white transition-colors">PRIVACY POLICY</a>
+            <a href="#" class="hover:text-white transition-colors">TERMS OF SERVICE</a>
+            <a href="#" class="hover:text-white transition-colors">CONTACT SUPPORT</a>
+        </div>
+    </div>
+</section>
+
+        </div>
+    </div>
+
+    <!-- SCRIPTS -->
+    <script>
+        // 1. PRELOADER REMOVED - DIRECTLY INITIALIZE SITE
+        window.addEventListener('load', () => {
+            initSite();
+        });
+
+        // 2. FLUID CURSOR
+        const fluidCanvas = document.getElementById('fluid-canvas');
+        const fluidCtx = fluidCanvas.getContext('2d');
+        let fluidWidth, fluidHeight, particles = [];
+        function resizeFluid() { fluidWidth = fluidCanvas.width = window.innerWidth; fluidHeight = fluidCanvas.height = window.innerHeight; }
+        window.addEventListener('resize', resizeFluid); resizeFluid();
+        window.addEventListener('mousemove', (e) => {
+            for(let i=0; i<3; i++) particles.push({ x: e.clientX, y: e.clientY, vx: (Math.random()-0.5)*2, vy: (Math.random()-0.5)*2, size: Math.random()*5+2, life: 1, color: Math.random()>0.5?'#00FF94':'#7B61FF' });
+        });
+        function animateFluid() {
+            fluidCtx.clearRect(0, 0, fluidWidth, fluidHeight);
+            for(let i=0; i<particles.length; i++) {
+                const p = particles[i]; p.x += p.vx; p.y += p.vy; p.life -= 0.02; p.size *= 0.95;
+                fluidCtx.globalAlpha = p.life; fluidCtx.fillStyle = p.color; fluidCtx.beginPath(); fluidCtx.arc(p.x, p.y, p.size, 0, Math.PI*2); fluidCtx.fill();
+                if(p.life <= 0) { particles.splice(i, 1); i--; }
+            }
+            requestAnimationFrame(animateFluid);
+        }
+        animateFluid();
+
+        // 3. CURSOR DOT
+        const cursor = document.getElementById('cursor');
+        const cursorDot = document.getElementById('cursor-dot');
+        window.addEventListener('mousemove', (e) => {
+            gsap.to(cursor, { x: e.clientX, y: e.clientY, duration: 0.1 });
+            gsap.to(cursorDot, { x: e.clientX, y: e.clientY, duration: 0 });
+        });
+        document.querySelectorAll('a, button, .tilt-card').forEach(el => {
+            el.addEventListener('mouseenter', () => cursor.classList.add('hovered'));
+            el.addEventListener('mouseleave', () => cursor.classList.remove('hovered'));
+        });
+
+        // 4. MAIN INIT
+        function initSite() {
+            const lenis = new Lenis({ duration: 1.2, smooth: true });
+            function raf(time) { lenis.raf(time); requestAnimationFrame(raf); }
+            requestAnimationFrame(raf);
+            gsap.registerPlugin(ScrollTrigger);
+
+            // HERO
+            const heroTl = gsap.timeline();
+            heroTl.to('.reveal-hero', { y: 0, opacity: 1, duration: 1, stagger: 0.2, ease: "power3.out" });
+
+            // COMPILER
+            ScrollTrigger.create({
+                trigger: "#compiler", start: "top top", end: "+=200%", pin: true,
+                onUpdate: (self) => {
+                    const p = self.progress;
+                    const code = document.getElementById('typewriter-code');
+                    const win = document.getElementById('ide-window');
+                    const term = document.getElementById('terminal-success');
+                    if(p > 0.05) gsap.to(win, { opacity: 1, y: 0 });
+                    if(p < 0.4) { code.innerHTML = `<span class="token keyword">def</span> solve(arr):<br>&nbsp;&nbsp;<span class="token keyword">return</span> sorted(arr)`; term.classList.add('hidden'); }
+                    else if (p < 0.8) { code.innerHTML = `<span class="token keyword">void</span> solve(vector&lt;<span class="token keyword">int</span>&gt;& arr) {<br>&nbsp;&nbsp;std::sort(arr.begin(), arr.end());<br>}`; }
+                    else { term.classList.remove('hidden'); }
+                }
+            });
+
+            // QUANTUM BENCH
+            ScrollTrigger.create({
+                trigger: "#bench", start: "top center",
+                onEnter: () => {
+                    gsap.to("#bar-local", { width: "40%", duration: 3, ease: "power1.inOut" });
+                    gsap.to("#bar-skila", { width: "95%", duration: 0.2, delay: 0.5, ease: "power4.out", onComplete: () => {
+                        document.getElementById('skila-time').classList.remove('hidden');
+                        document.getElementById('skila-status').innerText = "COMPLETE";
+                    }});
+                }
+            });
+
+            // AI CODE REVIEW
+            ScrollTrigger.create({
+                trigger: "#codereview", start: "top center",
+                onEnter: () => {
+                    setTimeout(() => {
+                        const reviewCode = document.getElementById('review-code');
+                        const tooltip = document.getElementById('review-tooltip');
+                        const scanLine = document.querySelector('.scan-line');
+                        scanLine.classList.remove('hidden'); scanLine.classList.add('animate-pulse');
+                        setTimeout(() => {
+                            reviewCode.innerHTML = `<span class="text-red-500 line-through decoration-red-500">for i in range(n):</span><br><span class="text-red-500 line-through">for j in range(n):</span>`;
+                            tooltip.classList.remove('hidden');
+                        }, 1000);
+                        setTimeout(() => {
+                            reviewCode.innerHTML = `<span class="text-neon">hash_map = {}</span><br><span class="text-neon">for i, val in enumerate(nums):</span><br>&nbsp;&nbsp;complement = target - val`;
+                            tooltip.innerHTML = "✔ Optimized to O(n)";
+                            tooltip.className = "absolute top-10 right-[-20px] bg-green-900/90 text-white text-xs p-3 rounded border border-green-500 backdrop-blur-md";
+                            scanLine.classList.add('hidden');
+                        }, 2500);
+                    }, 500);
+                }
+            });
+
+            // SKILL TREE
+            gsap.to(".skill-path-active", { strokeDashoffset: 0, scrollTrigger: { trigger: "#learning", start: "top center", end: "bottom center", scrub: 1 } });
+            document.querySelectorAll('.skill-node').forEach(node => {
+                ScrollTrigger.create({ trigger: node, start: "top 60%", onEnter: () => gsap.to(node, { opacity: 1, scale: 1, duration: 0.5 }) });
+            });
+
+            // RAPID QUIZ
+            const stack = document.getElementById('card-stack');
+            for(let i=0; i<3; i++) {
+                const card = document.createElement('div');
+                card.className = "absolute inset-0 bg-[#111] border border-gray-800 rounded-xl p-4 flex items-center justify-center transform transition-transform";
+                card.style.zIndex = 10 - i; card.style.transform = `translateZ(-${i*50}px) translateY(-${i*10}px)`;
+                card.innerHTML = `<div class="font-mono text-xs text-gray-500">Q: Time Complexity of Merge Sort?</div>`;
+                stack.appendChild(card);
+            }
+            ScrollTrigger.create({
+                trigger: "#quiz-section", start: "top center",
+                onEnter: () => {
+                    const cards = stack.children;
+                    const tl = gsap.timeline();
+                    tl.to(cards[0], { x: 300, rotation: 20, opacity: 0, duration: 0.5 })
+                      .to("#quiz-feedback", { opacity: 1, scale: 1.5, duration: 0.1, yoyo: true, repeat: 1 }, "<")
+                      .to(cards[1], { z: 0, y: 0, duration: 0.5 }, "-=0.2");
+                }
+            });
+
+            // FLOW STATE
+            const kb = document.getElementById('keyboard-grid');
+            for(let i=0; i<30; i++) { const key = document.createElement('div'); key.className = "key w-8 h-8 bg-gray-800 rounded border border-gray-700"; kb.appendChild(key); }
+            setInterval(() => {
+                const keys = document.querySelectorAll('.key'); const rand = Math.floor(Math.random() * keys.length);
+                keys[rand].classList.add('active'); setTimeout(() => keys[rand].classList.remove('active'), 100);
+                const wpm = document.getElementById('wpm-counter'); wpm.innerText = parseInt(wpm.innerText) + Math.floor(Math.random()*5);
+                if(parseInt(wpm.innerText) > 120) wpm.innerText = 120;
+            }, 100);
+
+            // NEXUS
+            ScrollTrigger.create({
+                trigger: "#nexus", start: "top center",
+                onEnter: () => {
+                    gsap.to(".nexus-orb", { top: "50%", bottom: "50%", left: "50%", scale: 0, opacity: 0, duration: 1, ease: "back.in(2)" });
+                    gsap.to("#nexus-core", { scale: 1.5, borderColor: "#FFD700", duration: 0.5, delay: 1 });
+                    gsap.to("#nexus-core-glow", { scale: 2, opacity: 0.8, duration: 0.5, delay: 1 });
+                    gsap.to("#nexus-counter", { innerText: 1540, duration: 2, snap: { innerText: 1 }, delay: 1.2 });
+                }
+            });
+
+            // RADAR
+            const ctxChart = document.getElementById('radarChart').getContext('2d');
+            new Chart(ctxChart, {
+                type: 'radar',
+                data: {
+                    labels: ['DP', 'Graphs', 'Math', 'Strings', 'Greedy'],
+                    datasets: [{ label: 'You', data: [90, 85, 70, 95, 80], backgroundColor: 'rgba(0, 255, 148, 0.2)', borderColor: '#00FF94', borderWidth: 2 }, { label: 'Global Avg', data: [50, 50, 50, 50, 50], backgroundColor: 'rgba(120, 120, 120, 0.1)', borderColor: '#555', borderWidth: 1 }]
+                },
+                options: { scales: { r: { grid: { color: '#333' }, ticks: { display: false } } }, plugins: { legend: { labels: { color: 'white' } } } }
+            });
+
+            // DASHBOARD BARS
+            const dashBars = document.getElementById('dash-bars');
+            for(let i=0; i<20; i++) {
+                const bar = document.createElement('div'); bar.className = "w-full bg-[#00FF94] rounded-t opacity-50"; bar.style.height = Math.random() * 100 + "%";
+                dashBars.appendChild(bar); gsap.to(bar, { height: Math.random() * 100 + "%", duration: 1, repeat: -1, yoyo: true, ease: "sine.inOut", delay: i * 0.05 });
+            }
+
+            // ARENA (Restored ScrollTrigger + Tilt)
+            const arenaCards = document.querySelectorAll('#arena-cards-container .tilt-card');
+            gsap.to(arenaCards, {
+                y: 0, opacity: 1, duration: 0.8, stagger: 0.2, ease: "power3.out",
+                scrollTrigger: { trigger: "#arena", start: "top 60%" }
+            });
+
+            // CODELABS
+            const cube = document.getElementById('interactive-cube');
+            const cubeDeg = document.getElementById('cube-deg');
+            ScrollTrigger.create({
+                trigger: "#codelabs", start: "top center", end: "bottom center", scrub: 1,
+                onUpdate: (self) => { const rot = self.progress * 360; cube.style.transform = `translateZ(-100px) rotateY(${rot}deg) rotateX(${rot * 0.5}deg)`; cubeDeg.innerText = Math.floor(rot); }
+            });
+
+            // RESUME
+            gsap.to("#resume-content", { opacity: 1, filter: "blur(0px)", scrollTrigger: { trigger: "#resume-doc", start: "top 70%", end: "top 30%", scrub: 1 } });
+
+            // 3D TILT LOGIC (Global)
+            document.querySelectorAll('.tilt-card').forEach(card => {
+                card.addEventListener('mousemove', (e) => {
+                    const rect = card.getBoundingClientRect(); const x = e.clientX - rect.left; const y = e.clientY - rect.top;
+                    card.style.transform = `perspective(1000px) rotateX(${((y - rect.height/2)/rect.height/2)*-10}deg) rotateY(${((x - rect.width/2)/rect.width/2)*10}deg)`;
+                });
+                card.addEventListener('mouseleave', () => card.style.transform = `perspective(1000px) rotateX(0) rotateY(0)`);
+            });
+
+            // GLOBE
+            initGlobe();
+        }
+
+        function initGlobe() {
+            const container = document.getElementById('globe-container');
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight * 0.8);
+            container.appendChild(renderer.domElement);
+            const geometry = new THREE.IcosahedronGeometry(3, 2);
+            const material = new THREE.MeshBasicMaterial({ color: 0x333333, wireframe: true, transparent: true, opacity: 0.3 });
+            const globe = new THREE.Mesh(geometry, material);
+            scene.add(globe);
+            const particlesGeo = new THREE.BufferGeometry();
+            const particleCount = 200;
+            const posArray = new Float32Array(particleCount * 3);
+            for(let i = 0; i < particleCount * 3; i++) posArray[i] = (Math.random() - 0.5) * 10;
+            particlesGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            const particlesMat = new THREE.PointsMaterial({ size: 0.05, color: 0x00FF94 });
+            const particlesMesh = new THREE.Points(particlesGeo, particlesMat);
+            globe.add(particlesMesh);
+            camera.position.z = 6;
+            function animate() { requestAnimationFrame(animate); globe.rotation.y += 0.002; particlesMesh.rotation.y -= 0.001; renderer.render(scene, camera); }
+            animate();
+            window.addEventListener('resize', () => { camera.aspect = window.innerWidth / (window.innerHeight * 0.8); camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight * 0.8); });
+        }
+    </script>
+</body>
+</html>
