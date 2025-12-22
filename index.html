@@ -57,17 +57,14 @@
 
     <style>
         /* --- CORE VISUALS --- */
-        :root { --cursor-size: 20px; --cursor-hover-size: 80px; }
-        body { cursor: none; overflow-x: hidden; background-color: #030303; color: #EDEDED; }
+       
+        body {  overflow-x: hidden; background-color: #030303; color: #EDEDED; }
 
         /* Noise Overlay */
         .noise { position: fixed; inset: 0; width: 100%; height: 100%; background: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.04'/%3E%3C/svg%3E"); pointer-events: none; z-index: 999; mix-blend-mode: overlay; }
 
         /* Custom Cursor */
-        #cursor { position: fixed; top: 0; left: 0; width: var(--cursor-size); height: var(--cursor-size); border: 1px solid rgba(255, 255, 255, 0.5); border-radius: 50%; pointer-events: none; z-index: 10000; transform: translate(-50%, -50%); transition: width 0.3s, height 0.3s, background-color 0.3s; mix-blend-mode: difference; }
-        #cursor.hovered { width: var(--cursor-hover-size); height: var(--cursor-hover-size); background-color: rgba(255, 255, 255, 0.1); border-color: transparent; backdrop-filter: blur(2px); }
-        #cursor-dot { position: fixed; top: 0; left: 0; width: 4px; height: 4px; background-color: #00FF94; border-radius: 50%; pointer-events: none; z-index: 10001; transform: translate(-50%, -50%); }
-
+       
         /* Fluid Canvas */
         #fluid-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; opacity: 0.6; pointer-events: none; }
 
@@ -209,8 +206,7 @@
 
     <!-- VISUAL LAYERS -->
     <div class="noise"></div>
-    <div id="cursor"></div>
-    <div id="cursor-dot"></div>
+    
     <canvas id="fluid-canvas"></canvas>
     <canvas id="starfield" class="fixed top-0 left-0 w-full h-full z-0 opacity-30 pointer-events-none"></canvas>
 
@@ -878,37 +874,8 @@
             initSite();
         });
 
-        // 2. FLUID CURSOR
-        const fluidCanvas = document.getElementById('fluid-canvas');
-        const fluidCtx = fluidCanvas.getContext('2d');
-        let fluidWidth, fluidHeight, particles = [];
-        function resizeFluid() { fluidWidth = fluidCanvas.width = window.innerWidth; fluidHeight = fluidCanvas.height = window.innerHeight; }
-        window.addEventListener('resize', resizeFluid); resizeFluid();
-        window.addEventListener('mousemove', (e) => {
-            for(let i=0; i<3; i++) particles.push({ x: e.clientX, y: e.clientY, vx: (Math.random()-0.5)*2, vy: (Math.random()-0.5)*2, size: Math.random()*5+2, life: 1, color: Math.random()>0.5?'#00FF94':'#7B61FF' });
-        });
-        function animateFluid() {
-            fluidCtx.clearRect(0, 0, fluidWidth, fluidHeight);
-            for(let i=0; i<particles.length; i++) {
-                const p = particles[i]; p.x += p.vx; p.y += p.vy; p.life -= 0.02; p.size *= 0.95;
-                fluidCtx.globalAlpha = p.life; fluidCtx.fillStyle = p.color; fluidCtx.beginPath(); fluidCtx.arc(p.x, p.y, p.size, 0, Math.PI*2); fluidCtx.fill();
-                if(p.life <= 0) { particles.splice(i, 1); i--; }
-            }
-            requestAnimationFrame(animateFluid);
-        }
-        animateFluid();
-
-        // 3. CURSOR DOT
-        const cursor = document.getElementById('cursor');
-        const cursorDot = document.getElementById('cursor-dot');
-        window.addEventListener('mousemove', (e) => {
-            gsap.to(cursor, { x: e.clientX, y: e.clientY, duration: 0.1 });
-            gsap.to(cursorDot, { x: e.clientX, y: e.clientY, duration: 0 });
-        });
-        document.querySelectorAll('a, button, .tilt-card').forEach(el => {
-            el.addEventListener('mouseenter', () => cursor.classList.add('hovered'));
-            el.addEventListener('mouseleave', () => cursor.classList.remove('hovered'));
-        });
+      
+      
 
         // 4. MAIN INIT
         function initSite() {
