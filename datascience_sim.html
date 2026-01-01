@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Science: K-Means Clustering & Voronoi</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;800&display=swap');
+
+        :root {
+            --bg: #0F172A;
+            --panel: rgba(15, 23, 42, 0.9);
+            --border: rgba(255, 255, 255, 0.1);
+            --accent: #38BDF8;
+            --text: #94A3B8;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: var(--bg);
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text);
+            user-select: none;
+        }
+
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+        }
+
+        .hud-panel {
+            position: absolute;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            border-radius: 8px;
+            pointer-events: auto;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .top-left {
+            top: 20px;
+            left: 20px;
+            width: 300px;
+        }
+
+        .bottom-right {
+            bottom: 20px;
+            right: 20px;
+            width: 350px;
+        }
+
+        h1 {
+            font-family: 'Inter', sans-serif;
+            font-size: 16px;
+            color: #fff;
+            margin: 0 0 5px 0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .metric {
+            font-size: 24px;
+            color: var(--accent);
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 15px;
+        }
+
+        button {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            color: #fff;
+            padding: 8px 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            margin-right: 5px;
+            border-radius: 4px;
+        }
+
+        button:hover {
+            background: var(--accent);
+            color: #000;
+        }
+
+        button.active {
+            background: var(--accent);
+            color: #000;
+            box-shadow: 0 0 10px var(--accent);
+        }
+
+        .slider-container {
+            margin: 15px 0;
+        }
+
+        input[type=range] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        #boot-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 999;
+            transition: opacity 0.5s;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="boot-screen">
+        <div style="color: #fff; font-family: 'Inter'; font-weight: 800; font-size: 32px; letter-spacing: -1px;">SKILA
+            DATA ENGINE</div>
+        <div style="color: #666; font-size: 12px; margin-top: 10px;">INITIALIZING K-MEANS CLUSTERING KERNEL...</div>
+    </div>
+
+    <!-- BACKGROUND FOR VORONOI RENDER -->
+    <canvas id="voronoi-canvas"></canvas>
+    <!-- FOREGROUND FOR PARTICLES & UI -->
+    <canvas id="main-canvas"></canvas>
+
+    <div id="ui-layer">
+        <div class="hud-panel top-left">
+            <h1>Hyperscale Clustering</h1>
+            <div class="label">Unsupervised Learning / K-Means++</div>
+
+            <div class="metric" id="inertia-val">0.00</div>
+            <div class="label">TOTAL INERTIA (LOSS)</div>
+
+            <div class="metric" id="iter-val">0</div>
+            <div class="label">ITERATIONS</div>
+
+            <div style="margin-top: 20px;">
+                <div class="label">ALGORITHM CONTROL</div>
+                <button id="btn-step">STEP +1</button>
+                <button id="btn-run">AUTO RUN</button>
+                <button id="btn-reset" style="border-color: #ef4444; color: #ef4444;">RESET</button>
+            </div>
+        </div>
+
+        <div class="hud-panel bottom-right">
+            <h1>Data Architect</h1>
+            <div class="label">Configuration</div>
+
+            <div class="slider-container">
+                <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                    <span>K-CENTROIDS</span>
+                    <span id="k-val" style="color:#fff;">4</span>
+                </div>
+                <input type="range" id="k-slider" min="2" max="8" value="4">
+            </div>
+
+            <div class="label">INTERACTION MODE</div>
+            <div style="display: flex; gap: 5px;">
+                <button id="mode-paint" class="active">PAINT DATA</button>
+                <button id="mode-centroid">MOVE CENTROID</button>
+            </div>
+
+            <div style="margin-top: 20px; height: 100px; border: 1px solid var(--border); position: relative;">
+                <canvas id="graph-canvas" width="310" height="100"></canvas>
+            </div>
+            <div class="label" style="margin-top: 5px; text-align: right;">LOSS FUNCTION HISTORY</div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * =================================================================================
+         *  BIG DATA GLASS: K-MEANS SIMULATION
+         *  (c) 2025 Deepmind Agentic Mode
+         *  
+         *  NO LIBRARIES. PURE MATH.
+         * =================================================================================
+         */
+
+        // ---------------------------------------------------------------------------------
+        // MODULE 1: VECTOR MATH
+        // ---------------------------------------------------------------------------------
+        class Vec2 {
+            constructor(x, y) { this.x = x; this.y = y; }
+            add(v) { return new Vec2(this.x + v.x, this.y + v.y); }
+            sub(v) { return new Vec2(this.x - v.x, this.y - v.y); }
+            mul(s) { return new Vec2(this.x * s, this.y * s); }
+            div(s) { return new Vec2(this.x / s, this.y / s); }
+            distSq(v) { return (this.x - v.x) ** 2 + (this.y - v.y) ** 2; }
+            clone() { return new Vec2(this.x, this.y); }
+        }
+
+        const CONSTANTS = {
+            COLORS: [
+                '#22d3ee', // Cyan
+                '#f472b6', // Pink
+                '#a3e635', // Lime
+                '#fbbf24', // Amber
+                '#818cf8', // Indigo
+                '#ef4444', // Red
+                '#f0abfc', // Fuchsia
+                '#14b8a6'  // Teal
+            ],
+            UNCLASSIFIED: '#334155'
+        };
+
+        // ---------------------------------------------------------------------------------
+        // MODULE 2: DATA STRUCTURES
+        // ---------------------------------------------------------------------------------
+        class DataPoint {
+            constructor(x, y) {
+                this.pos = new Vec2(x, y);
+                this.clusterIdx = -1;
+                this.color = CONSTANTS.UNCLASSIFIED;
+            }
+        }
+
+        class Centroid {
+            constructor(x, y, color) {
+                this.pos = new Vec2(x, y);
+                this.color = color;
+                this.history = [];
+            }
+
+            commit() {
+                this.history.push(this.pos.clone());
+                if (this.history.length > 20) this.history.shift();
+            }
+        }
+
+        // ---------------------------------------------------------------------------------
+        // MODULE 3: THE ENGINE (K-MEANS)
+        // ---------------------------------------------------------------------------------
+        class ClusterEngine {
+            constructor() {
+                this.points = [];
+                this.centroids = [];
+                this.k = 4;
+                this.iterations = 0;
+                this.inertia = 0; // Sum of Squared Errors
+                this.history = [];
+            }
+
+            // Generate Random Blobs
+            initData(w, h, count = 1000) {
+                this.points = [];
+                this.centroids = [];
+                this.iterations = 0;
+                this.history = [];
+
+                // Create Gaussian Blobs
+                const numBlobs = Utils.randInt(3, 6);
+                for (let b = 0; b < numBlobs; b++) {
+                    const cx = Utils.rand(w * 0.2, w * 0.8);
+                    const cy = Utils.rand(h * 0.2, h * 0.8);
+                    const stdDev = Utils.rand(30, 80);
+
+                    const ptsPerBlob = Math.floor(count / numBlobs);
+                    for (let i = 0; i < ptsPerBlob; i++) {
+                        // Box-Muller Transform for Gaussian distribution
+                        const u = 1 - Math.random();
+                        const v = Math.random();
+                        const z = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+                        const z2 = Math.sqrt(-2.0 * Math.log(u)) * Math.sin(2.0 * Math.PI * v);
+
+                        this.points.push(new DataPoint(cx + z * stdDev, cy + z2 * stdDev));
+                    }
+                }
+
+                this.initCentroids(w, h);
+            }
+
+            initCentroids(w, h) {
+                this.centroids = [];
+                // K-Means++ Initialization could go here, but random for visual drama
+                for (let i = 0; i < this.k; i++) {
+                    this.centroids.push(new Centroid(
+                        Utils.rand(w * 0.1, w * 0.9),
+                        Utils.rand(h * 0.1, h * 0.9),
+                        CONSTANTS.COLORS[i % CONSTANTS.COLORS.length]
+                    ));
+                }
+            }
+
+            step() {
+                let moved = false;
+                this.iterations++;
+
+                // 1. Assignment Step
+                this.inertia = 0;
+                for (let p of this.points) {
+                    let minDist = Infinity;
+                    let idx = -1;
+
+                    for (let i = 0; i < this.centroids.length; i++) {
+                        const dSq = p.pos.distSq(this.centroids[i].pos);
+                        if (dSq < minDist) {
+                            minDist = dSq;
+                            idx = i;
+                        }
+                    }
+
+                    p.clusterIdx = idx;
+                    p.color = this.centroids[idx].color;
+                    this.inertia += minDist;
+                }
+                this.history.push(this.inertia);
+                if (this.history.length > 50) this.history.shift();
+
+                // 2. Update Step
+                for (let c of this.centroids) c.commit();
+
+                for (let i = 0; i < this.centroids.length; i++) {
+                    let sumX = 0, sumY = 0, count = 0;
+                    for (let p of this.points) {
+                        if (p.clusterIdx === i) {
+                            sumX += p.pos.x;
+                            sumY += p.pos.y;
+                            count++;
+                        }
+                    }
+
+                    if (count > 0) {
+                        const oldPos = this.centroids[i].pos;
+                        const newPos = new Vec2(sumX / count, sumY / count);
+                        if (oldPos.distSq(newPos) > 0.1) moved = true;
+                        this.centroids[i].pos = newPos;
+                    }
+                    // Else: Dead centroid (orphan), maybe respawn? Keeping simple for now.
+                }
+
+                return moved;
+            }
+
+            addPoint(x, y) {
+                this.points.push(new DataPoint(x, y));
+            }
+        }
+
+        // ---------------------------------------------------------------------------------
+        // MODULE 4: RENDER ENGINE (VORONOI & GIZMOS)
+        // ---------------------------------------------------------------------------------
+        class VisEngine {
+            constructor() {
+                this.vCanvas = document.getElementById('voronoi-canvas');
+                this.vCtx = this.vCanvas.getContext('2d', { alpha: false }); // No transparency for bg
+                this.mCanvas = document.getElementById('main-canvas');
+                this.mCtx = this.mCanvas.getContext('2d');
+                this.gCanvas = document.getElementById('graph-canvas');
+                this.gCtx = this.gCanvas.getContext('2d');
+
+                this.width = window.innerWidth;
+                this.height = window.innerHeight;
+
+                this.resize();
+            }
+
+            resize() {
+                this.width = window.innerWidth;
+                this.height = window.innerHeight;
+
+                // Low-Res Voronoi Buffer for Performance check
+                // 1/4 resolution = 16x faster pixel iterations
+                this.vScale = 0.25;
+                this.vCanvas.width = this.width * this.vScale;
+                this.vCanvas.height = this.height * this.vScale;
+                this.vCanvas.style.width = '100vw';
+                this.vCanvas.style.height = '100vh';
+                this.vCtx.imageSmoothingEnabled = false; // Pixel art look
+
+                this.mCanvas.width = this.width;
+                this.mCanvas.height = this.height;
+            }
+
+            renderVoronoi(centroids) {
+                const w = this.vCanvas.width;
+                const h = this.vCanvas.height;
+
+                // Direct Pixel Manipulation
+                const imgData = this.vCtx.createImageData(w, h);
+                const data = imgData.data;
+
+                // Pre-calculate parsed colors to avoid parsing in loop
+                const colorMap = centroids.map(c => {
+                    // HEX to RGB
+                    const hex = c.color.replace('#', '');
+                    return {
+                        r: parseInt(hex.substring(0, 2), 16),
+                        g: parseInt(hex.substring(2, 4), 16),
+                        b: parseInt(hex.substring(4, 6), 16)
+                    };
+                });
+
+                // Centroids in buffer space
+                const cBuffer = centroids.map(c => ({
+                    x: c.pos.x * this.vScale,
+                    y: c.pos.y * this.vScale
+                }));
+
+                for (let y = 0; y < h; y++) {
+                    for (let x = 0; x < w; x++) {
+                        let minDist = Infinity;
+                        let idx = 0;
+
+                        // Find Nearest Centroid
+                        for (let i = 0; i < cBuffer.length; i++) {
+                            const c = cBuffer[i];
+                            const d = (x - c.x) ** 2 + (y - c.y) ** 2;
+                            if (d < minDist) {
+                                minDist = d;
+                                idx = i;
+                            }
+                        }
+
+                        const ptr = (y * w + x) * 4;
+                        const col = colorMap[idx];
+
+                        // Dim the color for background
+                        data[ptr] = col.r * 0.1;
+                        data[ptr + 1] = col.g * 0.1;
+                        data[ptr + 2] = col.b * 0.1;
+                        data[ptr + 3] = 255;
+                    }
+                }
+
+                this.vCtx.putImageData(imgData, 0, 0);
+            }
+
+            renderOverlay(engine) {
+                const ctx = this.mCtx;
+                ctx.clearRect(0, 0, this.width, this.height);
+
+                // 1. Draw Data Points
+                for (let p of engine.points) {
+                    // optimization: small rects are faster than arcs
+                    ctx.fillStyle = p.color;
+                    ctx.globalAlpha = 0.8;
+                    const size = 3;
+                    ctx.fillRect(p.pos.x - 1, p.pos.y - 1, size, size);
+                }
+                ctx.globalAlpha = 1.0;
+
+                // 2. Draw Centroids (Gravity Wells)
+                for (let c of engine.centroids) {
+                    ctx.shadowBlur = 20;
+                    ctx.shadowColor = c.color;
+
+                    // History Trail
+                    ctx.beginPath();
+                    ctx.strokeStyle = c.color;
+                    ctx.lineWidth = 2;
+                    ctx.globalAlpha = 0.5;
+                    for (let hIdx = 0; hIdx < c.history.length; hIdx++) {
+                        const h = c.history[hIdx];
+                        if (hIdx === 0) ctx.moveTo(h.x, h.y);
+                        else ctx.lineTo(h.x, h.y);
+                    }
+                    ctx.stroke();
+                    ctx.globalAlpha = 1.0;
+
+                    // Core
+                    ctx.fillStyle = c.color;
+                    ctx.beginPath();
+                    ctx.arc(c.pos.x, c.pos.y, 10, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Ring
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(c.pos.x, c.pos.y, 14, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    ctx.shadowBlur = 0;
+                }
+            }
+
+            renderGraph(history) {
+                const ctx = this.gCtx;
+                const w = this.gCanvas.width;
+                const h = this.gCanvas.height;
+
+                ctx.fillStyle = '#111';
+                ctx.fillRect(0, 0, w, h);
+
+                if (history.length < 2) return;
+
+                const maxVal = Math.max(...history) * 1.1;
+                const minVal = 0;
+
+                ctx.strokeStyle = '#38BDF8';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+
+                for (let i = 0; i < history.length; i++) {
+                    const x = (i / (history.length - 1)) * w;
+                    const y = h - ((history[i] - minVal) / (maxVal - minVal)) * h;
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+
+                // Gradient Fill
+                ctx.lineTo(w, h);
+                ctx.lineTo(0, h);
+                ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+                ctx.fill();
+            }
+        }
+
+        // ---------------------------------------------------------------------------------
+        // CONTROLLER
+        // ---------------------------------------------------------------------------------
+        const Utils = {
+            rand: (min, max) => Math.random() * (max - min) + min,
+            randInt: (min, max) => Math.floor(Math.random() * (max - min + 1)) + min
+        };
+
+        const engine = new ClusterEngine();
+        const vis = new VisEngine();
+
+        // State
+        let isRunning = false;
+        let paintMode = true; // true = paint data, false = move centroid
+
+        // Init
+        engine.initData(vis.width, vis.height, 2000);
+
+        // UI Refs
+        const inertiaEl = document.getElementById('inertia-val');
+        const iterEl = document.getElementById('iter-val');
+        const kValEl = document.getElementById('k-val');
+
+        // Core Loop
+        function loop() {
+            if (isRunning) {
+                const changed = engine.step();
+                if (!changed) isRunning = false; // Converged
+            }
+
+            // Render Voronoi (Expensive, check if needed every frame? Yes for drag.)
+            // Optimize: Only render if centroids moved or initialized
+            vis.renderVoronoi(engine.centroids);
+            vis.renderOverlay(engine);
+            vis.renderGraph(engine.history);
+
+            // Update HUD
+            inertiaEl.innerText = (engine.inertia / 1000000).toFixed(2) + 'M';
+            iterEl.innerText = engine.iterations;
+
+            requestAnimationFrame(loop);
+
+            // Boot fade
+            document.getElementById('boot-screen').style.opacity = 0;
+            if (document.getElementById('boot-screen').style.opacity == 0) document.getElementById('boot-screen').style.display = 'none';
+        }
+
+        // Controls
+        document.getElementById('btn-step').onclick = () => engine.step();
+        document.getElementById('btn-run').onclick = () => isRunning = !isRunning;
+        document.getElementById('btn-reset').onclick = () => {
+            engine.initData(vis.width, vis.height);
+            isRunning = false;
+        };
+
+        const slider = document.getElementById('k-slider');
+        slider.oninput = (e) => {
+            const k = parseInt(e.target.value);
+            engine.k = k;
+            kValEl.innerText = k;
+            engine.initData(vis.width, vis.height);
+        };
+
+        document.getElementById('mode-paint').onclick = (e) => { paintMode = true; updateModeBtns(e.target); };
+        document.getElementById('mode-centroid').onclick = (e) => { paintMode = false; updateModeBtns(e.target); };
+
+        function updateModeBtns(activeBtn) {
+            document.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+            activeBtn.classList.add('active');
+        }
+
+        // Mouse Painting
+        let isDrag = false;
+        window.addEventListener('mousedown', () => isDrag = true);
+        window.addEventListener('mouseup', () => isDrag = false);
+        window.addEventListener('mousemove', (e) => {
+            if (isDrag && paintMode) {
+                // Spray Gun
+                for (let i = 0; i < 5; i++) {
+                    const r = Utils.rand(0, 30);
+                    const theta = Math.random() * Math.PI * 2;
+                    engine.addPoint(e.clientX + r * Math.cos(theta), e.clientY + r * Math.sin(theta));
+                }
+            } else if (isDrag && !paintMode) {
+                // Move closest centroid
+                let closest = null;
+                let minD = 10000;
+                for (let c of engine.centroids) {
+                    const d = c.pos.distSq(new Vec2(e.clientX, e.clientY));
+                    if (d < minD) { minD = d; closest = c; }
+                }
+                if (closest) {
+                    closest.pos.x = e.clientX;
+                    closest.pos.y = e.clientY;
+                }
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            vis.resize();
+            // Re-render
+        });
+
+        requestAnimationFrame(loop);
+    </script>
+</body>
+
+</html>

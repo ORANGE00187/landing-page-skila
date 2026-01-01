@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Relative Velocity Vector Lab</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --neon-green: #00ff9d;
+            --neon-blue: #00f7ff;
+            --neon-red: #ff0055;
+            --hud-bg: rgba(0, 20, 40, 0.85);
+            --grid-color: rgba(0, 247, 255, 0.1);
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Orbitron', sans-serif;
+            color: white;
+            user-select: none;
+        }
+
+        #canvas-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* HUD UI LAYER */
+        #hud-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .panel {
+            pointer-events: auto;
+            background: var(--hud-bg);
+            border: 1px solid var(--neon-blue);
+            box-shadow: 0 0 15px var(--neon-blue);
+            border-radius: 4px;
+            padding: 20px;
+            backdrop-filter: blur(5px);
+        }
+
+        /* Control Deck */
+        #controls {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 600px;
+            height: 160px;
+            display: flex;
+            gap: 30px;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            width: 150px;
+        }
+
+        label {
+            font-size: 12px;
+            color: var(--neon-blue);
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .val-display {
+            font-size: 18px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 0 0 5px var(--neon-blue);
+        }
+
+        /* Custom Sliders */
+        input[type=range] {
+            width: 100%;
+            -webkit-appearance: none;
+            background: transparent;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: white;
+            margin-top: -6px;
+            box-shadow: 0 0 10px white;
+            cursor: pointer;
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            background: #334155;
+            border-radius: 2px;
+        }
+
+        /* Compass Dial */
+        #compass-con {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            border: 2px solid var(--neon-green);
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.5);
+            cursor: grab;
+        }
+
+        #compass-arrow {
+            width: 4px;
+            height: 40px;
+            background: var(--neon-green);
+            position: absolute;
+            bottom: 50%;
+            left: 50%;
+            transform-origin: bottom center;
+            transform: translateX(-2px) rotate(0deg);
+            box-shadow: 0 0 10px var(--neon-green);
+        }
+
+        #compass-con:active {
+            cursor: grabbing;
+            border-color: white;
+        }
+
+        /* Launch Button */
+        #btn-launch {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: 4px solid var(--neon-red);
+            color: var(--neon-red);
+            background: rgba(20, 0, 0, 0.5);
+            font-size: 18px;
+            font-weight: 900;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-shadow: 0 0 10px var(--neon-red);
+            box-shadow: 0 0 20px rgba(255, 0, 85, 0.2);
+        }
+
+        #btn-launch:hover {
+            background: var(--neon-red);
+            color: white;
+            box-shadow: 0 0 40px var(--neon-red);
+        }
+
+        /* Stats Top Left */
+        #stats {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 250px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 4px;
+        }
+
+        .stat-label {
+            color: #94a3b8;
+            font-size: 11px;
+        }
+
+        .stat-val {
+            font-family: monospace;
+            font-size: 14px;
+        }
+
+        /* Vector Legend Top Right */
+        #legend {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            text-align: right;
+        }
+
+        .leg-item {
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+
+        .dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+
+        /* Success Overlay */
+        #message {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 60px;
+            font-weight: 900;
+            color: white;
+            text-shadow: 0 0 30px var(--neon-green);
+            opacity: 0;
+            transition: opacity 0.5s;
+            pointer-events: none;
+            text-transform: uppercase;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas-layer"></canvas>
+
+    <div id="hud-layer">
+        <div class="panel" id="stats">
+            <h3 style="color:var(--neon-blue); margin-bottom:15px; border-bottom:1px solid var(--neon-blue);">NAV DATA
+            </h3>
+            <div class="stat-row">
+                <span class="stat-label">BOAT SPEED (Vb)</span>
+                <span class="stat-val" id="disp-vb" style="color:var(--neon-green)">0 m/s</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">RIVER FLOW (Vr)</span>
+                <span class="stat-val" id="disp-vr" style="color:var(--neon-blue)">0 m/s</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">RESULTANT (Vres)</span>
+                <span class="stat-val" id="disp-vres" style="color:var(--neon-red)">0 m/s</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">DRIFT ANGLE</span>
+                <span class="stat-val" id="disp-ang">0°</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">CROSSING TIME</span>
+                <span class="stat-val" id="disp-time">-- s</span>
+            </div>
+        </div>
+
+        <div class="panel" id="legend">
+            <div class="leg-item" style="color:var(--neon-green)"><span class="dot"
+                    style="background:var(--neon-green)"></span>BOAT HEADING</div>
+            <div class="leg-item" style="color:var(--neon-blue)"><span class="dot"
+                    style="background:var(--neon-blue)"></span>RIVER CURRENT</div>
+            <div class="leg-item" style="color:var(--neon-red)"><span class="dot"
+                    style="background:var(--neon-red)"></span>RESULTANT PATH</div>
+        </div>
+
+        <div id="controls" class="panel">
+            <!-- Compass -->
+            <div class="control-group">
+                <label>HEADING</label>
+                <div id="compass-con">
+                    <div id="compass-arrow"></div>
+                </div>
+                <div class="val-display" id="val-head">0°</div>
+            </div>
+
+            <!-- Throttle -->
+            <div class="control-group">
+                <label>THROTTLE</label>
+                <input type="range" id="sl-throttle" min="0" max="10" step="0.5" value="5">
+                <div class="val-display" id="val-throttle">5.0 m/s</div>
+            </div>
+
+            <!-- Launch -->
+            <div id="btn-launch">LAUNCH</div>
+
+            <!-- River Speed -->
+            <div class="control-group">
+                <label>RIVER FLOW</label>
+                <input type="range" id="sl-river" min="0" max="8" step="0.5" value="2">
+                <div class="val-display" id="val-river">2.0 m/s</div>
+            </div>
+        </div>
+
+        <div id="message">TARGET<br>ACQUIRED</div>
+    </div>
+
+    <script>
+        /**
+         * RELATIVE VELOCITY PHYSICS ENGINE
+         * Grade 11 Physics Simulation
+         * Concepts: Vector Addition, Reference Frames, 2D Kinematics
+         */
+
+        const canvas = document.getElementById('canvas-layer');
+        const ctx = canvas.getContext('2d');
+
+        // --- CONSTANTS ---
+        const TARGET_FPS = 60;
+        const PIXEL_SCALE = 20; // 20 pixels = 1 meter
+
+        // --- STATE ---
+        let W, H;
+        let STATE = 'IDLE'; // IDLE, RUNNING, FINISHED
+
+        // Physics Vars
+        let boat = {
+            x: 0, y: 0,
+            angle: 0, // Radians, 0 = North (Up)
+            speed: 5, // m/s magnitude
+            width: 40, height: 60
+        };
+
+        let river = {
+            speed: 2, // m/s (Right is positive)
+            yStart: 0,
+            yEnd: 0
+        };
+
+        // Simulation Data
+        let timeElapsed = 0;
+        let ghostTrail = []; // {x, y}
+        let waterOffset = 0;
+
+        // Targets
+        let dock = { x: 0, y: 0, width: 100, height: 20 };
+
+        // --- INPUTS ---
+        const compass = document.getElementById('compass-con');
+        const arrow = document.getElementById('compass-arrow');
+        const slThrottle = document.getElementById('sl-throttle');
+        const slRiver = document.getElementById('sl-river');
+        const btnLaunch = document.getElementById('btn-launch');
+        const msg = document.getElementById('message');
+
+        // --- INITIALIZATION ---
+        function init() {
+            resize();
+            resetSim();
+
+            // Events
+            window.addEventListener('resize', resize);
+
+            // Compass Interaction
+            let isDragging = false;
+            compass.addEventListener('mousedown', () => isDragging = true);
+            window.addEventListener('mouseup', () => isDragging = false);
+            window.addEventListener('mousemove', e => {
+                if (isDragging && STATE === 'IDLE') {
+                    const rect = compass.getBoundingClientRect();
+                    const cx = rect.left + rect.width / 2;
+                    const cy = rect.top + rect.height / 2;
+                    const angle = Math.atan2(e.clientY - cy, e.clientX - cx);
+                    // Convert to North-Up based degrees
+                    // Math: 0 is Right (East). +PI/2 is Down.
+                    // We want 0 to be Up (-PI/2).
+                    // Visual rotation: css transform rotate(deg). 0deg is vertical in CSS if element is vertical.
+                    // The element is vertical line. So rotate(0) is Up.
+
+                    // Angle relative to Up vector (0, -1)
+                    // Let's us simple degrees.
+                    let deg = (angle * 180 / Math.PI) + 90;
+                    setHeading(deg);
+                }
+            });
+
+            slThrottle.addEventListener('input', e => {
+                boat.speed = parseFloat(e.target.value);
+                document.getElementById('val-throttle').innerText = boat.speed.toFixed(1) + " m/s";
+                updateVectors();
+            });
+
+            slRiver.addEventListener('input', e => {
+                river.speed = parseFloat(e.target.value);
+                document.getElementById('val-river').innerText = river.speed.toFixed(1) + " m/s";
+                updateVectors();
+            });
+
+            btnLaunch.addEventListener('click', () => {
+                if (STATE === 'IDLE') startSim();
+                else resetSim();
+            });
+
+            loop();
+        }
+
+        function resize() {
+            W = canvas.width = window.innerWidth;
+            H = canvas.height = window.innerHeight;
+            resetSim();
+        }
+
+        function setHeading(deg) {
+            boat.angle = deg * Math.PI / 180;
+            arrow.style.transform = `translateX(-2px) rotate(${deg}deg)`;
+            document.getElementById('val-head').innerText = Math.round(deg) + "°";
+            updateVectors();
+        }
+
+        function resetSim() {
+            STATE = 'IDLE';
+            ghostTrail = [];
+            timeElapsed = 0;
+            msg.style.opacity = 0;
+            btnLaunch.innerText = "LAUNCH";
+            btnLaunch.style.borderColor = "var(--neon-red)";
+
+            // Positions
+            river.yStart = H * 0.2;
+            river.yEnd = H * 0.8;
+
+            // Boat resets to center bottom
+            boat.x = W / 2;
+            boat.y = H - 50;
+
+            // Dock centered top
+            dock.x = W / 2;
+            dock.y = 50; // In water? No, passing river.
+            // Let's say River is middle band.
+            // Setup:
+            // Bank 1 (Start): Bottom
+            // Bank 2 (End): Top
+            // River fills middle.
+
+            river.yStart = 100;
+            river.yEnd = H - 100;
+
+            boat.y = H - 80; // On bank
+            dock.y = 80;     // On bank
+
+            updateVectors();
+        }
+
+        function startSim() {
+            STATE = 'RUNNING';
+            btnLaunch.innerText = "RESET";
+            btnLaunch.style.borderColor = "#fff";
+        }
+
+        function updateVectors() {
+            // Calculate components
+            // Vb (Boat)
+            // Angle 0 is UP (-Y).
+            const vb_x = boat.speed * Math.sin(boat.angle);
+            const vb_y = -boat.speed * Math.cos(boat.angle); // Up is negative Y
+
+            // Vr (River)
+            const vr_x = river.speed; // Always right
+            const vr_y = 0;
+
+            // Vres (Resultant)
+            const vres_x = vb_x + vr_x;
+            const vres_y = vb_y + vr_y;
+
+            const vres_mag = Math.hypot(vres_x, vres_y);
+
+            // Update UI
+            document.getElementById('disp-vb').innerText = boat.speed.toFixed(1) + " m/s";
+            document.getElementById('disp-vr').innerText = river.speed.toFixed(1) + " m/s";
+            document.getElementById('disp-vres').innerText = vres_mag.toFixed(1) + " m/s";
+
+            // Time to cross
+            // Distance Y = river width
+            const distY = (boat.y - dock.y); // approx
+            const vy = Math.abs(vres_y);
+            if (vy > 0) {
+                const t = (distY / PIXEL_SCALE) / vy;
+                document.getElementById('disp-time').innerText = t.toFixed(1) + " s";
+            } else {
+                document.getElementById('disp-time').innerText = "∞";
+            }
+
+            // Drift Angle
+            // Angle of resultant vector relative to Vertical
+            // atan2(x, -y)
+            const resAng = Math.atan2(vres_x, -vres_y) * 180 / Math.PI;
+            document.getElementById('disp-ang').innerText = resAng.toFixed(1) + "°";
+
+            return { vb_x, vb_y, vr_x, vr_y, vres_x, vres_y };
+        }
+
+        // --- LOOP ---
+        function loop() {
+            // Update
+            // Animated Water Texture
+            waterOffset += river.speed * 2; // Pixel speed prop to m/s
+            if (waterOffset > 100) waterOffset -= 100;
+
+            if (STATE === 'RUNNING') {
+                const vecs = updateVectors();
+
+                // Only apply River Vector if IN the river
+                const inRiver = boat.y > river.yStart && boat.y < river.yEnd;
+
+                let dx = vecs.vb_x;
+                let dy = vecs.vb_y;
+
+                if (inRiver) {
+                    dx += vecs.vr_x;
+                    dy += vecs.vr_y;
+                }
+
+                // Move Boat (Scale meters to pixels)
+                // Let's dampen speed for visual clarity: Scale * 0.05
+                const speedScale = 0.05 * PIXEL_SCALE; // pixels per frame per m/s
+
+                boat.x += dx * speedScale;
+                boat.y += dy * speedScale;
+
+                // Trail
+                if (timeElapsed % 5 === 0) {
+                    ghostTrail.push({ x: boat.x, y: boat.y });
+                }
+                timeElapsed++;
+
+                // Check Arrival
+                if (boat.y <= dock.y + 20) {
+                    STATE = 'FINISHED';
+                    checkWin();
+                }
+
+                // Check Screen Bounds
+                if (boat.x < 0 || boat.x > W || boat.y < 0) {
+                    STATE = 'FINISHED';
+                    if (boat.y > 0) msg.innerText = "MISSED TARGET";
+                    msg.style.opacity = 1; msg.style.color = 'var(--neon-red)';
+                }
+            }
+
+            render();
+            requestAnimationFrame(loop);
+        }
+
+        function checkWin() {
+            const dist = Math.abs(boat.x - dock.x);
+            if (dist < 40) {
+                msg.innerHTML = "PERFECT<br>LANDING";
+                msg.style.color = "var(--neon-green)";
+                msg.style.textShadow = "0 0 50px var(--neon-green)";
+            } else {
+                msg.innerHTML = "MISSED<br>TOO MUCH DRIFT";
+                msg.style.color = "var(--neon-red)";
+                msg.style.textShadow = "0 0 50px var(--neon-red)";
+            }
+            msg.style.opacity = 1;
+        }
+
+        // --- RENDER ---
+        function render() {
+            ctx.clearRect(0, 0, W, H);
+
+            // 1. DRAW BANKS
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(0, 0, W, river.yStart); // Top Bank
+            ctx.fillRect(0, river.yEnd, W, H - river.yEnd); // Bottom Bank
+
+            // Grid on banks
+            drawGrid(0, 0, W, river.yStart);
+            drawGrid(0, river.yEnd, W, H);
+
+            // 2. DRAW RIVER
+            // Neon Hydro Aesthetic
+            const grad = ctx.createLinearGradient(0, river.yStart, 0, river.yEnd);
+            grad.addColorStop(0, '#0f172a');
+            grad.addColorStop(0.5, '#000');
+            grad.addColorStop(1, '#0f172a');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, river.yStart, W, river.yEnd - river.yStart);
+
+            // Flow lines
+            ctx.strokeStyle = 'rgba(0, 247, 255, 0.2)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+
+            // Scroll offset
+            const flowY = river.yStart;
+            const flowH = river.yEnd - river.yStart;
+
+            for (let y = flowY + 20; y < river.yEnd; y += 40) {
+                // Sine waves scrolling right
+                for (let x = -100; x < W; x += 100) {
+                    let lx = x + waterOffset;
+                    ctx.moveTo(lx, y);
+                    ctx.lineTo(lx + 50, y);
+                }
+            }
+            ctx.stroke();
+
+            // 3. TARGET DOCK
+            ctx.fillStyle = '#334155';
+            ctx.fillRect(dock.x - dock.width / 2, dock.y - 10, dock.width, 20);
+            // Glowing landing pad
+            ctx.shadowBlur = 20; ctx.shadowColor = '#fff';
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(dock.x - 30, dock.y, 60, 5);
+            ctx.shadowBlur = 0;
+
+            // 4. GHOST TRAIL
+            if (ghostTrail.length > 1) {
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                ctx.moveTo(ghostTrail[0].x, ghostTrail[0].y);
+                for (let i = 1; i < ghostTrail.length; i++) ctx.lineTo(ghostTrail[i].x, ghostTrail[i].y);
+                ctx.lineTo(boat.x, boat.y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // 5. BOAT
+            ctx.save();
+            ctx.translate(boat.x, boat.y);
+            ctx.rotate(boat.angle); // Rotate Hull based on Heading
+
+            // Hull
+            ctx.shadowBlur = 15; ctx.shadowColor = 'var(--neon-green)';
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.moveTo(0, -30); // Bow
+            ctx.lineTo(15, 20);
+            ctx.lineTo(-15, 20);
+            ctx.fill();
+
+            // Neon Trim
+            ctx.strokeStyle = 'var(--neon-green)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Engine Glow
+            if (STATE === 'RUNNING') {
+                ctx.fillStyle = 'var(--neon-green)';
+                ctx.fillRect(-10, 20, 5, 10 + Math.random() * 10);
+                ctx.fillRect(5, 20, 5, 10 + Math.random() * 10);
+            }
+
+            ctx.restore();
+            ctx.shadowBlur = 0;
+
+            // 6. VECTORS (Floating above boat)
+            // We draw these non-rotated relative to screen to show world vectors?
+            // Or relative to boat?
+            // "Vectors & Relative Motion" typically shows vectors originating from object center.
+
+            // Draw Origin
+            const ox = boat.x;
+            const oy = boat.y;
+
+            const scale = 15; // Vector length scaling for visibility
+
+            const v = updateVectors(); // Get current values
+
+            // Boat Vector (Green) - Heading
+            drawVector(ox, oy, v.vb_x * scale, v.vb_y * scale, 'var(--neon-green)');
+
+            // River Vector (Blue) - Drift
+            // Logic: Does River act on boat? Yes.
+            // Draw it starting from the *tip* of the Boat Vector to show addition?
+            // Tail-to-Tip method is best for education.
+
+            const tipX = ox + v.vb_x * scale;
+            const tipY = oy + v.vb_y * scale;
+
+            // Only show river vector if in river? Or always for planning?
+            // Show always so user can plan.
+            drawVector(tipX, tipY, v.vr_x * scale, v.vr_y * scale, 'var(--neon-blue)');
+
+            // Resultant Vector (Red) - Actual Path
+            // From Origin to River Tip
+            // Check pulsating effect
+            const pulse = 1 + Math.sin(Date.now() * 0.01) * 0.1;
+            drawVector(ox, oy, v.vres_x * scale, v.vres_y * scale, 'var(--neon-red)', pulse);
+
+            // Dashed projection lines for Resultant
+            ctx.strokeStyle = 'rgba(255, 0, 85, 0.2)';
+            ctx.setLineDash([2, 2]);
+            ctx.beginPath();
+            ctx.moveTo(ox, oy);
+            // Project far out to show destination prediction
+            const predScale = 200;
+            ctx.lineTo(ox + v.vres_x * scale * predScale, oy + v.vres_y * scale * predScale);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        function drawVector(x, y, dx, dy, color, widthScale = 1) {
+            ctx.strokeStyle = color;
+            ctx.fillStyle = color;
+            ctx.lineWidth = 3 * widthScale;
+
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + dx, y + dy);
+            ctx.stroke();
+
+            // Arrowhead
+            const ang = Math.atan2(dy, dx);
+            const headLen = 10 * widthScale;
+            ctx.beginPath();
+            ctx.moveTo(x + dx, y + dy);
+            ctx.lineTo(x + dx - headLen * Math.cos(ang - Math.PI / 6), y + dy - headLen * Math.sin(ang - Math.PI / 6));
+            ctx.lineTo(x + dx - headLen * Math.cos(ang + Math.PI / 6), y + dy - headLen * Math.sin(ang + Math.PI / 6));
+            ctx.fill();
+        }
+
+        function drawGrid(x1, y1, x2, y2) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (let x = x1; x < x2; x += 40) { ctx.moveTo(x, y1); ctx.lineTo(x, y2); }
+            for (let y = y1; y < y2; y += 40) { ctx.moveTo(x1, y); ctx.lineTo(x2, y); }
+            ctx.stroke();
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

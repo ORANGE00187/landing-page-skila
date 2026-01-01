@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Lever Lab</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #1e293b;
+            font-family: 'Space Grotesk', sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .hud {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.9);
+            padding: 10px 30px;
+            border-radius: 10px;
+            border: 1px solid #475569;
+            color: #4ade80;
+            font-size: 20px;
+            font-weight: bold;
+            display: flex;
+            gap: 40px;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="hud">
+        <div>Load Torque: <span id="load-t">0</span></div>
+        <div>Effort Torque: <span id="effort-t">0</span></div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const lt = document.getElementById('load-t');
+        const et = document.getElementById('effort-t');
+
+        let width, height;
+
+        // Items
+        // Fulcrum (Movable)
+        let FULCRUM = { x: 0.5 }; // 0 to 1 along plank
+        // Plank
+        const PLANK_W = 600;
+        const PLANK_H = 20;
+        // Load (Left side usually)
+        let LOAD = { mass: 100 }; // kg
+        // Effort (Right side)
+        let EFFORT_Y = 0; // Piston position
+        let EFFORT_FORCE = 0; // Applied
+
+        // Piston Drag
+        let PISTON = { dragging: false, y: 0 };
+        // Fulcrum Drag
+        let F_DRAG = false;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        canvas.addEventListener('mousedown', e => {
+            const cx = width / 2; const cy = height / 2 + 100;
+            const mx = e.clientX; const my = e.clientY;
+
+            // Check Fulcrum
+            const fx = cx - PLANK_W / 2 + FULCRUM.x * PLANK_W;
+            const fy = cy + 20;
+            if (Math.abs(mx - fx) < 40 && Math.abs(my - fy) < 40) { F_DRAG = true; return; }
+
+            // Check Piston (Right Edge)
+            const px = cx + PLANK_W / 2;
+            const py = cy - 50 + PISTON.y;
+            if (Math.abs(mx - px) < 40 && Math.abs(my - py) < 60) { PISTON.dragging = true; }
+        });
+
+        window.addEventListener('mouseup', () => { F_DRAG = false; PISTON.dragging = false; });
+        window.addEventListener('mousemove', e => {
+            const cx = width / 2;
+            if (F_DRAG) {
+                let x = (e.clientX - (cx - PLANK_W / 2)) / PLANK_W;
+                FULCRUM.x = Math.max(0.1, Math.min(0.9, x));
+            }
+            if (PISTON.dragging) {
+                // Not direct Y mapping, we apply force?
+                // Visual drag
+                let dy = e.clientY - (height / 2 + 50); // Relative to rest
+                PISTON.y = Math.max(0, Math.min(100, dy));
+            }
+            else {
+                // Return to 0
+                PISTON.y *= 0.9;
+            }
+        });
+
+        function loop() {
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(0, 0, width, height);
+
+            const cx = width / 2; const cy = height / 2 + 100;
+
+            // Calc Physics
+            // Load is at x=0 (Left tip). Fulcrum at FULCRUM.x
+            // Dist Load = FULCRUM.x * PLANK_W
+            // Dist Effort = (1 - FULCRUM.x) * PLANK_W
+
+            const distL = FULCRUM.x * PLANK_W;
+            const distE = (1 - FULCRUM.x) * PLANK_W;
+
+            // Torque Load = mass * g * dist
+            const torqueL = LOAD.mass * 9.8 * distL;
+
+            // To lift, Effort Torque > Torque Load
+            // Effort Force required = torqueL / distE
+            const reqForce = torqueL / distE;
+
+            // Fake user input force based on piston drag depth
+            const userForce = PISTON.y * 50; // Arbitrary scale
+            const torqueE = userForce * distE;
+
+            lt.innerText = Math.round(torqueL);
+            et.innerText = Math.round(torqueE);
+
+            // Angle?
+            // If torqueE > torqueL, plank rotates clockwise (Right goes down, Left goes up)
+            // Wait, Piston pushes DOWN on Right.
+            // Load pushes DOWN on Left.
+            // Fulcrum in middle.
+            // Left wants to go DOWN (CCW rotation). Right wants to go DOWN (CW rotation).
+            // So Torque L is CCW. Torque E is CW.
+
+            let angle = 0;
+            if (torqueE > torqueL) {
+                // Lifting! (Right down, Left up)
+                angle = Math.min(0.3, (torqueE - torqueL) * 0.00005);
+            } else {
+                // Resting (Left down, Right up)
+                angle = -0.3; // Resting on ground logic
+            }
+
+            // Smooth angle
+            if (!window.curAngle) window.curAngle = -0.3;
+            window.curAngle += (angle - window.curAngle) * 0.1;
+
+
+            // DRAW
+            ctx.save();
+            ctx.translate(cx - PLANK_W / 2 + distL, cy); // Translate to Fulcrum top
+
+            // Draw Fulcrum (Triangle)
+            ctx.fillStyle = '#f97316';
+            ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-20, 40); ctx.lineTo(20, 40); ctx.fill();
+
+            // Rotate Plank
+            ctx.rotate(window.curAngle);
+
+            // Plank
+            ctx.fillStyle = 'rgba(148, 163, 184, 0.5)';
+            ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 2;
+            ctx.fillRect(-distL, -10, PLANK_W, 20);
+            ctx.strokeRect(-distL, -10, PLANK_W, 20);
+
+            // Load (Left)
+            ctx.fillStyle = '#475569';
+            ctx.fillRect(-distL, -70, 60, 60); // On plank
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 14px sans-serif'; ctx.fillText("100kg", -distL + 10, -35);
+
+            // Effort Point (Right)
+            // Piston Contact
+            const ex = PLANK_W - distL;
+            ctx.fillStyle = (torqueE > torqueL) ? '#4ade80' : '#f87171'; // Green if lifting
+            ctx.beginPath(); ctx.arc(ex, 0, 10, 0, Math.PI * 2); ctx.fill();
+
+            ctx.restore();
+
+            // Draw Piston (Static vertical position, visually connecting)
+            // The top of piston is fixed? Or user hand is pushing down?
+            // Let's draw "Hand" pushing
+            const handX = cx + PLANK_W / 2 - (1 - FULCRUM.x) * 0; // Wait, piston is always at right tip? Yes.
+            // Actually tip moves with fulcrum? No, Plank moves. Piston stays at right end of plank.
+
+            // Just draw vector
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Volume Packer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #e0f2fe;
+            font-family: sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        input {
+            width: 50px;
+        }
+
+        .btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="hud">
+        <h2 class="font-bold text-lg mb-2">V = L x W x H</h2>
+        <div>L: <input type="number" id="inp-l" value="3" min="1" max="5"></div>
+        <div>W: <input type="number" id="inp-w" value="2" min="1" max="5"></div>
+        <div>H: <input type="number" id="inp-h" value="4" min="1" max="5"></div>
+        <div class="mt-2 text-xl font-bold">Total: <span id="vol-disp">24</span></div>
+        <button class="btn mt-2 w-full" onclick="fill()">FILL</button>
+        <button class="btn mt-2 w-full bg-red-500" onclick="reset()">CLEAR</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const lIn = document.getElementById('inp-l');
+        const wIn = document.getElementById('inp-w');
+        const hIn = document.getElementById('inp-h');
+        const vDisp = document.getElementById('vol-disp');
+
+        let width, height;
+        let BLOCKS = [];
+
+        let L = 3, W = 2, H = 4;
+        const SIZE = 40;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function updateDims() {
+            L = parseInt(lIn.value); W = parseInt(wIn.value); H = parseInt(hIn.value);
+            vDisp.innerText = L * W * H;
+            reset();
+        }
+        [lIn, wIn, hIn].forEach(i => i.addEventListener('change', updateDims));
+
+        window.reset = () => { BLOCKS = []; }
+        window.fill = () => {
+            BLOCKS = [];
+            // Create blocks with animation delay
+            let count = 0;
+            for (let y = 0; y < H; y++) {
+                for (let z = 0; z < W; z++) {
+                    for (let x = 0; x < L; x++) {
+                        // Push block target
+                        setTimeout(() => {
+                            BLOCKS.push({ x, y, z, val: 0, target: 1 }); // val 0->1 scale
+                        }, count * 50);
+                        count++;
+                    }
+                }
+            }
+        }
+
+        function toIso(x, y, z) {
+            // Isometric projection
+            // x goes right-down, z goes left-down, y goes UP
+            // screenX = (x - z) * cos(30)
+            // screenY = (x + z) * sin(30) - y
+
+            const ix = (x - z) * SIZE * 0.866;
+            const iy = (x + z) * SIZE * 0.5 - (y * SIZE);
+            return { x: width / 2 + ix, y: height / 2 + 200 + iy };
+        }
+
+        function loop() {
+            ctx.fillStyle = '#e0f2fe';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw Container Guidelines
+            // Wireframe
+
+            // Sort blocks by depth (Painter's algo)
+            // Lowest y first? Furthest back first.
+            // Metric: x + z + y?
+            // Actually, we usually draw bottom layer up, back to front.
+            // Order: y 0->H, z 0->W, x 0->L ?
+
+            // Draw Blocks
+            BLOCKS.forEach(b => {
+                // Animate scale/pos
+                // We can just draw them
+                if (b.target > 0) {
+                    drawBlock(b.x, b.y, b.z);
+                }
+            });
+
+            requestAnimationFrame(loop);
+        }
+
+        function drawBlock(gx, gy, gz) {
+            const p = toIso(gx, gy, gz);
+            const x = p.x; const y = p.y;
+
+            // Cube Colors (Jelly)
+            const top = '#60a5fa';
+            const right = '#3b82f6';
+            const left = '#2563eb';
+
+            const dx = SIZE * 0.866;
+            const dy = SIZE * 0.5;
+
+            // Top Face
+            ctx.fillStyle = top; ctx.beginPath();
+            ctx.moveTo(x, y - SIZE);
+            ctx.lineTo(x + dx, y - SIZE - dy);
+            ctx.lineTo(x, y - SIZE - 2 * dy);
+            ctx.lineTo(x - dx, y - SIZE - dy);
+            ctx.fill(); ctx.stroke();
+
+            // Right Face
+            ctx.fillStyle = right; ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + dx, y - dy);
+            ctx.lineTo(x + dx, y - SIZE - dy);
+            ctx.lineTo(x, y - SIZE);
+            ctx.fill(); ctx.stroke();
+
+            // Left Face
+            ctx.fillStyle = left; ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x - dx, y - dy);
+            ctx.lineTo(x - dx, y - SIZE - dy);
+            ctx.lineTo(x, y - SIZE);
+            ctx.fill(); ctx.stroke();
+        }
+
+        loop();
+
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Fraction Slicer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Space Mono', monospace;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+        }
+
+        .hud {
+            position: absolute;
+            top: 10%;
+            left: 50%;
+            transform: translate(-50%, 0);
+            font-size: 80px;
+            color: #a855f7;
+            text-shadow: 0 0 20px #a855f7;
+            pointer-events: none;
+        }
+
+        .btn {
+            position: absolute;
+            bottom: 50px;
+            left: 50%;
+            transform: translate(-50%, 0);
+            background: #fff;
+            color: #000;
+            padding: 10px 30px;
+            border-radius: 30px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+    <div class="hud" id="hud">1 / 1</div>
+    <div class="btn" onclick="reset()">FUSE</div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const hud = document.getElementById('hud');
+
+        let width, height;
+        let SHAPE = 'circle';
+        let SLICES = 1; // 1, 2, 4
+
+        // Mouse Trail
+        let MOUSE = { x: 0, y: 0, down: false };
+        let TRAIL = [];
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        canvas.addEventListener('mousedown', e => { MOUSE.down = true; TRAIL = []; });
+        window.addEventListener('mouseup', e => {
+            MOUSE.down = false;
+            checkCut();
+            TRAIL = [];
+        });
+        window.addEventListener('mousemove', e => {
+            MOUSE.x = e.clientX; MOUSE.y = e.clientY;
+            if (MOUSE.down) TRAIL.push({ x: e.clientX, y: e.clientY });
+        });
+
+        window.reset = () => { SLICES = 1; updateHUD(); }
+
+        function updateHUD() {
+            if (SLICES === 1) hud.innerText = "1 / 1";
+            else if (SLICES === 2) hud.innerText = "1 / 2";
+            else if (SLICES === 4) hud.innerText = "1 / 4";
+        }
+
+        function checkCut() {
+            // Did trail cross center?
+            const cx = width / 2; const cy = height / 2;
+            let crossed = false;
+            // Simplified check: Does trail have points LEFT and RIGHT of center? Or TOP and BOTTOM?
+            let left = false, right = false, top = false, bottom = false;
+            TRAIL.forEach(p => {
+                if (p.x < cx - 50) left = true;
+                if (p.x > cx + 50) right = true;
+                if (p.y < cy - 50) top = true;
+                if (p.y > cy + 50) bottom = true;
+            });
+
+            if (SLICES === 1) {
+                if (left && right || top && bottom) { SLICES = 2; updateHUD(); }
+            } else if (SLICES === 2) {
+                if (left && right || top && bottom) { SLICES = 4; updateHUD(); }
+            }
+        }
+
+        function loop() {
+            ctx.fillStyle = '#0f0f0f';
+            ctx.fillRect(0, 0, width, height);
+
+            const cx = width / 2; const cy = height / 2;
+            const R = 150;
+
+            ctx.lineWidth = 5;
+            ctx.strokeStyle = '#a855f7';
+            ctx.fillStyle = 'rgba(168, 85, 247, 0.2)';
+
+            // Draw Slices
+            // If sliced, separate them slightly
+            const gap = 10;
+
+            if (SLICES === 1) {
+                ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            }
+            else if (SLICES === 2) {
+                // Left Half
+                ctx.beginPath(); ctx.arc(cx - gap, cy, R, Math.PI / 2, Math.PI * 1.5); ctx.closePath(); ctx.fill(); ctx.stroke();
+                // Right Half
+                ctx.beginPath(); ctx.arc(cx + gap, cy, R, -Math.PI / 2, Math.PI / 2); ctx.closePath(); ctx.fill(); ctx.stroke();
+            }
+            else if (SLICES === 4) {
+                // TL
+                ctx.beginPath(); ctx.moveTo(cx - gap, cy - gap); ctx.arc(cx - gap, cy - gap, R, Math.PI, Math.PI * 1.5); ctx.fill(); ctx.stroke();
+                // TR
+                ctx.beginPath(); ctx.moveTo(cx + gap, cy - gap); ctx.arc(cx + gap, cy - gap, R, -Math.PI / 2, 0); ctx.fill(); ctx.stroke();
+                // BR
+                ctx.beginPath(); ctx.moveTo(cx + gap, cy + gap); ctx.arc(cx + gap, cy + gap, R, 0, Math.PI / 2); ctx.fill(); ctx.stroke();
+                // BL
+                ctx.beginPath(); ctx.moveTo(cx - gap, cy + gap); ctx.arc(cx - gap, cy + gap, R, Math.PI / 2, Math.PI); ctx.fill(); ctx.stroke();
+            }
+
+            // Draw Laser Trail
+            if (MOUSE.down && TRAIL.length > 1) {
+                ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
+                ctx.shadowColor = '#fff'; ctx.shadowBlur = 20;
+                ctx.beginPath();
+                ctx.moveTo(TRAIL[0].x, TRAIL[0].y);
+                for (let i = 1; i < TRAIL.length; i++) ctx.lineTo(TRAIL[i].x, TRAIL[i].y);
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+            }
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+
+    </script>
+</body>
+
+</html>

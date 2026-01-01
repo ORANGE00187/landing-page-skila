@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Global Coordinates</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #0f172a;
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+        }
+
+        .hud {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translate(-50%);
+            display: flex;
+            gap: 40px;
+            color: #3b82f6;
+            font-size: 24px;
+        }
+
+        .val {
+            color: #facc15;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="hud">
+        <div>LAT: <span class="val" id="lat">0° N</span></div>
+        <div>LONG: <span class="val" id="long">0° E</span></div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const latD = document.getElementById('lat');
+        const longD = document.getElementById('long');
+
+        let width, height;
+        let ROTATION = 0;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        let MOUSE = { x: 0, y: 0 };
+        canvas.addEventListener('mousemove', e => { MOUSE.x = e.clientX; MOUSE.y = e.clientY; });
+
+        function loop() {
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, width, height);
+
+            const cx = width / 2; const cy = height / 2;
+            const R = 250;
+
+            ROTATION += 0.002;
+
+            // Sphere
+            ctx.strokeStyle = '#1e3a8a'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+
+            // Draw Lat/Long Grid
+            ctx.strokeStyle = '#1e40af';
+
+            // Latitudes (Horizontal rings)
+            for (let lat = -80; lat <= 80; lat += 20) {
+                // Ellipse based on tilt? No tilt for simplicity or simple 3D
+                // y = R * sin(lat)
+                // radius at lat = R * cos(lat)
+                const y = cy - R * Math.sin(lat * Math.PI / 180);
+                const rx = R * Math.cos(lat * Math.PI / 180);
+
+                ctx.beginPath(); ctx.ellipse(cx, y, rx, rx * 0.3, 0, 0, Math.PI * 2); ctx.stroke();
+            }
+
+            // Longitudes (Vertical ellipses rotating)
+            for (let lon = 0; lon < 360; lon += 20) {
+                const angle = (lon * Math.PI / 180) + ROTATION;
+                const sx = Math.cos(angle) * R; // x position on equator
+                // It's actually an ellipse going through poles
+                // Width varies
+                const w = R * Math.sin(angle); // Visible width?
+                // Perspective is tricky
+                // Let's just point project dots
+            }
+
+            // Simplified Dots Grid
+            ctx.fillStyle = '#3b82f6';
+            for (let lat = -80; lat <= 80; lat += 10) {
+                for (let lon = 0; lon < 360; lon += 10) {
+                    const phi = lat * Math.PI / 180;
+                    const theta = (lon * Math.PI / 180) + ROTATION;
+
+                    const x = R * Math.cos(phi) * Math.sin(theta);
+                    const y = -R * Math.sin(phi); // Y Up
+                    const z = R * Math.cos(phi) * Math.cos(theta); // Depth
+
+                    if (z > 0) {
+                        ctx.globalAlpha = z / R;
+                        ctx.beginPath(); ctx.arc(cx + x, cy + y, 2, 0, Math.PI * 2); ctx.fill();
+                    }
+                }
+            }
+            ctx.globalAlpha = 1;
+
+            // Cursor Targeting
+            // Convert Mouse Y to Lat
+            // y goes from cy-R to cy+R
+            // normalized y = (MOUSE.y - cy)/R => -sin(lat)
+            let latVal = -Math.asin(Math.max(-1, Math.min(1, (MOUSE.y - cy) / R))) * 180 / Math.PI;
+
+            // Convert Mouse X to Long (Relative to center)
+            // x = R * cos(lat) * sin(long)
+            const r_at_lat = R * Math.cos(latVal * Math.PI / 180);
+            let longVal = Math.asin(Math.max(-1, Math.min(1, (MOUSE.x - cx) / r_at_lat))) * 180 / Math.PI;
+
+            if (Math.abs(MOUSE.x - cx) > r_at_lat) longVal = 90; // clamp
+
+            latD.innerText = Math.round(latVal) + "° " + (latVal > 0 ? 'N' : 'S');
+            longD.innerText = Math.round(longVal) + "° " + (longVal > 0 ? 'E' : 'W');
+
+            // Draw Crosshair Ring (Lat)
+            const ly = cy - R * Math.sin(latVal * Math.PI / 180);
+            const lrx = R * Math.cos(latVal * Math.PI / 180);
+            ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.ellipse(cx, ly, lrx, lrx * 0.3, 0, 0, Math.PI * 2); ctx.stroke();
+
+            // Draw Crosshair Arc (Long)
+            // Harder. Just draw vertical line curved?
+            // Ellipse through poles passing through x
+            ctx.strokeStyle = '#22c55e';
+            ctx.beginPath(); ctx.ellipse(cx, cy, Math.abs(MOUSE.x - cx), R, 0, 0, Math.PI * 2); ctx.stroke();
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+
+    </script>
+</body>
+
+</html>

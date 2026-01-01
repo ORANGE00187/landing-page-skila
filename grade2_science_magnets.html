@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Magnetic Fields</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #0f172a;
+            font-family: 'Space Grotesk', sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(15, 23, 42, 0.8);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #334155;
+            color: white;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="ui">
+        <h1 class="text-2xl font-bold text-cyan-400">Magnetic Field</h1>
+        <p class="text-sm text-slate-400">Drag the magnets. Check the field lines.</p>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+        let MAGNETS = [
+            { x: 0, y: 0, angle: 0, dragging: false },
+            { x: 0, y: 0, angle: Math.PI, dragging: false }
+        ];
+
+        // Field Grid
+        const GRID_SIZE = 40;
+        let NEEDLES = [];
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+
+            MAGNETS[0].x = width * 0.3; MAGNETS[0].y = height * 0.5;
+            MAGNETS[1].x = width * 0.7; MAGNETS[1].y = height * 0.5;
+
+            NEEDLES = [];
+            for (let y = 0; y < height; y += GRID_SIZE) {
+                for (let x = 0; x < width; x += GRID_SIZE) {
+                    NEEDLES.push({ x: x + GRID_SIZE / 2, y: y + GRID_SIZE / 2, angle: 0 });
+                }
+            }
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Mouse
+        let MOUSE = { x: 0, y: 0, down: false };
+        let DRAGGING = null;
+
+        canvas.addEventListener('mousedown', e => {
+            MOUSE.down = true;
+            const mx = e.clientX; const my = e.clientY;
+            // Hit test
+            MAGNETS.forEach(m => {
+                const dx = mx - m.x; const dy = my - m.y; // Simplified box check
+                if (Math.abs(dx) < 60 && Math.abs(dy) < 30) {
+                    m.dragging = true;
+                    DRAGGING = m;
+                }
+            });
+        });
+
+        window.addEventListener('mouseup', () => {
+            MAGNETS.forEach(m => m.dragging = false);
+            DRAGGING = null;
+        });
+
+        window.addEventListener('mousemove', e => {
+            if (DRAGGING) {
+                DRAGGING.x = e.clientX;
+                DRAGGING.y = e.clientY;
+            }
+        });
+
+        // B Field Calc
+        // B = mu0/4pi * (3(m.r)r - m) / r^5  ... effectively sum of dipoles
+        // Simplified 2D: Treat N and S as point charges?
+        // Magnet = +q (North) at one end, -q (South) at other.
+
+        function getField(x, y) {
+            let bx = 0;
+            let by = 0;
+
+            MAGNETS.forEach(m => {
+                // North Pole pos (Red)
+                // Magnet is 120px long. Center at x,y.
+                // Angle 0 = Horizontal, N right, S left?
+                // Let's say: N is at angle, S is at angle + PI.
+
+                const len = 50; // Half length
+                const nx = m.x + Math.cos(m.angle) * len;
+                const ny = m.y + Math.sin(m.angle) * len;
+                const sx = m.x - Math.cos(m.angle) * len;
+                const sy = m.y - Math.sin(m.angle) * len;
+
+                // Vector from N (+1)
+                const dnx = x - nx; const dny = y - ny;
+                const rn = Math.sqrt(dnx * dnx + dny * dny);
+                const r3n = rn * rn * rn;
+                bx += (dnx / r3n) * 5000;
+                by += (dny / r3n) * 5000;
+
+                // Vector from S (-1)
+                const dsx = x - sx; const dsy = y - sy;
+                const rs = Math.sqrt(dsx * dsx + dsy * dsy);
+                const r3s = rs * rs * rs;
+                bx -= (dsx / r3s) * 5000;
+                by -= (dsy / r3s) * 5000;
+            });
+
+            return { x: bx, y: by };
+        }
+
+        function loop() {
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw Field Grid
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            NEEDLES.forEach(n => {
+                const b = getField(n.x, n.y);
+                const angle = Math.atan2(b.y, b.x);
+                const len = 10;
+                ctx.moveTo(n.x - Math.cos(angle) * len, n.y - Math.sin(angle) * len);
+                ctx.lineTo(n.x + Math.cos(angle) * len, n.y + Math.sin(angle) * len);
+            });
+            ctx.stroke();
+
+            // Draw Iron "Dust" (Fancy Glow)
+            // Just simulate random points aligning
+
+            // Draw Magnets
+            MAGNETS.forEach(m => {
+                ctx.save();
+                ctx.translate(m.x, m.y);
+                ctx.rotate(m.angle);
+
+                // Body
+                ctx.fillStyle = '#fff';
+                // South (Left)
+                ctx.fillStyle = '#3b82f6';
+                ctx.fillRect(-60, -20, 60, 40);
+                // North (Right)
+                ctx.fillStyle = '#ef4444';
+                ctx.fillRect(0, -20, 60, 40);
+                // Gloss
+                ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                ctx.fillRect(-60, -20, 120, 10);
+
+                // Label
+                ctx.fillStyle = 'white'; ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText("S", -30, 0);
+                ctx.fillText("N", 30, 0);
+
+                ctx.restore();
+            });
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+
+    </script>
+</body>
+
+</html>

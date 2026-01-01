@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ECE: Signal Modulation DSP Engine</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@500;900&display=swap');
+
+        :root {
+            --bg: #020617;
+            /* Radar Black */
+            --panel: rgba(15, 23, 42, 0.95);
+            --grid: rgba(0, 255, 127, 0.1);
+            /* Faint Green */
+            --text: #94A3B8;
+            --msg-color: #22D3EE;
+            /* Cyan */
+            --carrier-color: #E879F9;
+            /* Pink */
+            --out-color: #4ADE80;
+            /* Green */
+            --crt-scanline: rgba(0, 0, 0, 0.5);
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: var(--bg);
+            font-family: 'Share Tech Mono', monospace;
+            color: var(--text);
+            user-select: none;
+        }
+
+        /* CRT Filter */
+        body::before {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 2px, 3px 100%;
+            z-index: 900;
+            pointer-events: none;
+        }
+
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            box-sizing: border-box;
+            gap: 10px;
+        }
+
+        .scope-container {
+            flex: 1;
+            position: relative;
+            border: 1px solid rgba(0, 255, 127, 0.2);
+            background: rgba(0, 10, 5, 0.6);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .scope-label {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: rgba(0, 255, 127, 0.7);
+            font-size: 12px;
+            text-transform: uppercase;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 2px 5px;
+            border: 1px solid rgba(0, 255, 127, 0.3);
+            pointer-events: auto;
+        }
+
+        /* Control Panel sidebar */
+        #controls {
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            bottom: 20px;
+            width: 300px;
+            background: rgba(0, 10, 5, 0.9);
+            border: 1px solid rgba(0, 255, 127, 0.4);
+            box-shadow: 0 0 20px rgba(0, 255, 127, 0.1);
+            backdrop-filter: blur(5px);
+            pointer-events: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            z-index: 950;
+        }
+
+        h2 {
+            margin: 0;
+            color: #fff;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 18px;
+            text-align: center;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px rgba(0, 255, 127, 0.5);
+            border-bottom: 1px solid rgba(0, 255, 127, 0.3);
+            padding-bottom: 10px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        label {
+            font-size: 12px;
+            color: #aaa;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 4px;
+            background: #333;
+            outline: none;
+            border-radius: 2px;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            background: #0feca8;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 10px #0feca8;
+        }
+
+        .switch-container {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .mode-btn {
+            flex: 1;
+            padding: 10px;
+            background: #111;
+            border: 1px solid #444;
+            color: #666;
+            cursor: pointer;
+            text-align: center;
+            font-family: 'Orbitron';
+            transition: all 0.2s;
+        }
+
+        .mode-btn.active {
+            background: rgba(0, 255, 127, 0.2);
+            border-color: #0feca8;
+            color: #fff;
+            text-shadow: 0 0 8px #0feca8;
+            box-shadow: 0 0 15px rgba(0, 255, 127, 0.2);
+        }
+
+        .toggle-noise {
+            margin-top: auto;
+            background: #331111;
+            border: 1px solid #ff4444;
+            color: #ffcccc;
+            padding: 12px;
+            cursor: pointer;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .toggle-noise:hover {
+            background: #551111;
+        }
+
+        .toggle-noise.active {
+            background: #ff4444;
+            color: #000;
+            box-shadow: 0 0 20px #ff0000;
+        }
+
+        #boot-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            z-index: 9999;
+            transition: opacity 0.8s;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="boot-screen">
+        <div style="font-family: 'Orbitron'; font-size: 32px; color: #0feca8;">RF DSP LAB</div>
+        <div style="color: #444; margin-top: 10px;">INITIALIZING MODULATION KERNEL...</div>
+    </div>
+
+    <!-- MAIN RENDER -->
+    <canvas id="dsp-canvas"></canvas>
+
+    <!-- UI OVERLAY -->
+    <div id="ui-layer">
+        <!-- Message Scope -->
+        <div class="scope-container" id="scope-msg">
+            <div class="scope-label" style="color:var(--msg-color); border-color:var(--msg-color);">INPUT (MESSAGE)
+            </div>
+        </div>
+
+        <!-- Carrier Scope -->
+        <div class="scope-container" id="scope-carrier">
+            <div class="scope-label" style="color:var(--carrier-color); border-color:var(--carrier-color);">CARRIER (HF)
+            </div>
+        </div>
+
+        <!-- Output Scope -->
+        <div class="scope-container" id="scope-out">
+            <div class="scope-label" style="color:var(--out-color); border-color:var(--out-color);">MODULATED OUTPUT
+            </div>
+        </div>
+    </div>
+
+    <!-- CONTROLS -->
+    <div id="controls">
+        <h2>SIGNAL MODULATOR</h2>
+
+        <div class="switch-container">
+            <div class="mode-btn active" id="btn-am" onclick="setMode('AM')">AM</div>
+            <div class="mode-btn" id="btn-fm" onclick="setMode('FM')">FM</div>
+        </div>
+
+        <div class="control-group">
+            <label>MESSAGE FREQ <span id="val-msg-freq">5 Hz</span></label>
+            <input type="range" id="msg-freq" min="1" max="20" value="5">
+        </div>
+
+        <div class="control-group">
+            <label>CARRIER FREQ <span id="val-car-freq">50 Hz</span></label>
+            <input type="range" id="car-freq" min="20" max="200" value="50">
+        </div>
+
+        <div class="control-group">
+            <label>MOD. INDEX <span id="val-mod-idx">1.0</span></label>
+            <input type="range" id="mod-idx" min="0" max="5" step="0.1" value="1.0">
+        </div>
+
+        <div class="control-group">
+            <label>AMPLITUDE <span id="val-amp">100%</span></label>
+            <input type="range" id="amp" min="0" max="1" step="0.1" value="0.8">
+        </div>
+
+        <div class="toggle-noise" id="btn-noise" onclick="toggleNoise()">INJECT NOISE</div>
+    </div>
+
+    <script>
+        /**
+         * =================================================================================
+         *  RF SIGNAL MODULATION ENGINE
+         *  (c) 2025 Deepmind Agentic Mode
+         *  
+         *  Simulates AM/FM math and Oscilloscope Phosphor effects.
+         * =================================================================================
+         */
+
+        const STATE = {
+            mode: 'AM',
+            msgFreq: 5,
+            carrierFreq: 50,
+            modIndex: 1.0, // Beta for FM, or Depth for AM
+            amp: 0.8,
+            injectNoise: false,
+            time: 0
+        };
+
+        const CONSTANTS = {
+            MSG_COLOR: '#22D3EE',
+            CARRIER_COLOR: '#E879F9',
+            OUT_COLOR: '#4ADE80',
+            SAMPLE_RATE: 1000, // Points per screen width
+        };
+
+        // Ring Buffers (Float32 for performance)
+        const BUFFERS = {
+            msg: new Float32Array(CONSTANTS.SAMPLE_RATE),
+            carrier: new Float32Array(CONSTANTS.SAMPLE_RATE),
+            out: new Float32Array(CONSTANTS.SAMPLE_RATE),
+            ptr: 0
+        };
+
+        class Oscilloscope {
+            constructor(canvasId) {
+                this.canvas = document.getElementById(canvasId);
+                this.ctx = this.canvas.getContext('2d', { alpha: false });
+                this.width = window.innerWidth;
+                this.height = window.innerHeight;
+                this.resize();
+
+                window.addEventListener('resize', () => this.resize());
+            }
+
+            resize() {
+                this.width = this.canvas.width = window.innerWidth;
+                this.height = this.canvas.height = window.innerHeight;
+                this.layout();
+            }
+
+            layout() {
+                // Determine heights of the 3 scope areas (should match CSS flex regions)
+                // We'll trust the CSS overlay to guide the eye, but we render to one full canvas
+                this.scopeH = this.height / 3;
+            }
+
+            // Custom Renderer
+            draw(msgBuf, carBuf, outBuf) {
+                const ctx = this.ctx;
+                const w = this.width;
+                const h = this.height;
+                const sh = h / 3; // Section Height
+
+                // FADE EFFECT (Phosphor Persistence)
+                // Instead of clearRect, we draw a semi-transparent black rect
+                ctx.fillStyle = 'rgba(2, 6, 23, 0.2)';
+                ctx.fillRect(0, 0, w, h);
+
+                // Grid (Static, so maybe redraw every frame or overlay? Overlay is better perf. 
+                // But let's draw scan lines here for effect)
+                ctx.lineWidth = 1;
+
+                // Helper to draw buffer
+                const drawWave = (buffer, offsetY, color, glow) => {
+                    ctx.beginPath();
+                    ctx.strokeStyle = color;
+                    ctx.shadowBlur = glow ? 10 : 0;
+                    ctx.shadowColor = color;
+
+                    const step = w / CONSTANTS.SAMPLE_RATE;
+                    const ampScale = (sh / 2) * 0.8;
+                    const midY = offsetY + sh / 2;
+
+                    let first = true;
+                    // Draw from oldest to newest (Ring buffer logic) to make it look like a scrolling chart
+                    // OR: Just draw the buffer as is for a "Freeze" frame that updates?
+                    // Let's do Ring Buffer Scrolling (Right to Left)
+
+                    for (let i = 0; i < CONSTANTS.SAMPLE_RATE; i++) {
+                        const idx = (BUFFERS.ptr + i) % CONSTANTS.SAMPLE_RATE;
+                        const val = buffer[idx];
+
+                        const x = i * step;
+                        const y = midY - val * ampScale; // Invert Y
+
+                        if (first) { ctx.moveTo(x, y); first = false; }
+                        else ctx.lineTo(x, y);
+                    }
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+
+                    // Scanline/Beam tip
+                    const lastIdx = (BUFFERS.ptr + CONSTANTS.SAMPLE_RATE - 1) % CONSTANTS.SAMPLE_RATE;
+                    const ly = midY - buffer[lastIdx] * ampScale;
+                    ctx.fillStyle = '#fff';
+                    ctx.beginPath(); ctx.arc(w, ly, 2, 0, Math.PI * 2); ctx.fill();
+                };
+
+                // 1. Message Scope (Top)
+                drawWave(msgBuf, 0, CONSTANTS.MSG_COLOR, false);
+
+                // 2. Carrier Scope (Middle)
+                // Carrier is very high freq, might look like a solid block if aliased.
+                drawWave(carBuf, sh, CONSTANTS.CARRIER_COLOR, false);
+
+                // 3. Output Scope (Bottom)
+                // High glow for the result
+                drawWave(outBuf, sh * 2, CONSTANTS.OUT_COLOR, true);
+
+                // Dividers
+                ctx.strokeStyle = 'rgba(0, 255, 127, 0.2)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(0, sh); ctx.lineTo(w, sh);
+                ctx.moveTo(0, sh * 2); ctx.lineTo(w, sh * 2);
+                ctx.stroke();
+            }
+        }
+
+        const scope = new Oscilloscope('dsp-canvas');
+
+        // Physics Loop
+        function loop() {
+            // Speed factor
+            const dt = 0.016;
+            STATE.time += dt;
+
+            // Generate ONE new sample per frame? 
+            // No, we need to fill the buffer speed vs render speed.
+            // If we only push 1 sample, it scrolls very slow.
+            // Let's push N samples per frame to simulate speed.
+            const samplesPerFrame = 10;
+
+            for (let k = 0; k < samplesPerFrame; k++) {
+                const t = STATE.time + (k * 0.002); // micro-time step
+
+                // MATH KERNEL
+
+                // 1. Message Signal (The Data)
+                // y_m(t) = A_m * sin(w_m * t)
+                let msgVal = STATE.amp * Math.sin(2 * Math.PI * STATE.msgFreq * t * 0.1);
+
+                // 2. Carrier Signal (The Radio)
+                // y_c(t) = A_c * sin(w_c * t)
+                // We generate this inside the modulation mostly, but for display:
+                let carrierVal = Math.sin(2 * Math.PI * STATE.carrierFreq * t * 0.1);
+
+                // 3. Modulation
+                let outVal = 0;
+
+                if (STATE.mode === 'AM') {
+                    // AM Formula: y(t) = [1 + m * y_m(t)] * sin(w_c * t) 
+                    // (Simplified) -> Envelope shaping
+                    // Our msgVal is signed (-1 to 1). 
+                    // Classic AM: (1 + depth * msg) * carrier
+                    const depth = STATE.modIndex * 0.5; // Scale logic
+                    const envelope = (1 + depth * (msgVal / STATE.amp));
+                    outVal = envelope * carrierVal * STATE.amp;
+                }
+                else {
+                    // FM Formula: y(t) = A_c * sin(w_c * t + beta * sin(w_m * t))
+                    // The frequency changes based on message amplitude.
+                    // Integral of msg determines phase shift.
+                    // Simplified for viz: direct phase modulation 
+
+                    const beta = STATE.modIndex * 5.0; // Index strength
+                    // We need the integral of the message for true FM, or just offset phase
+                    // sin( 2pi*fc*t + beta * sin(2pi*fm*t) )
+                    outVal = STATE.amp * Math.sin(
+                        2 * Math.PI * STATE.carrierFreq * t * 0.1 +
+                        beta * Math.sin(2 * Math.PI * STATE.msgFreq * t * 0.1)
+                    );
+                }
+
+                // Noise Injection
+                if (STATE.injectNoise) {
+                    const noise = (Math.random() - 0.5) * 0.3;
+                    msgVal += noise * 0.5; // Corrupt input slightly
+                    outVal += noise;
+                }
+
+                // Write to Buffer
+                BUFFERS.msg[BUFFERS.ptr] = msgVal;
+                BUFFERS.carrier[BUFFERS.ptr] = carrierVal * STATE.amp; // Scaled for view
+                BUFFERS.out[BUFFERS.ptr] = outVal;
+
+                BUFFERS.ptr = (BUFFERS.ptr + 1) % CONSTANTS.SAMPLE_RATE;
+            }
+
+            // Render
+            scope.draw(BUFFERS.msg, BUFFERS.carrier, BUFFERS.out);
+
+            requestAnimationFrame(loop);
+
+            // Hide boot
+            const boot = document.getElementById('boot-screen');
+            if (boot) {
+                boot.style.opacity = 0;
+                if (boot.style.opacity == '0') setTimeout(() => boot.remove(), 800);
+            }
+        }
+
+        // ============================================
+        // CONTROLS INTERFACE
+        // ============================================
+
+        window.setMode = (mode) => {
+            STATE.mode = mode;
+            document.getElementById('btn-am').className = mode === 'AM' ? 'mode-btn active' : 'mode-btn';
+            document.getElementById('btn-fm').className = mode === 'FM' ? 'mode-btn active' : 'mode-btn';
+        };
+
+        window.toggleNoise = () => {
+            STATE.injectNoise = !STATE.injectNoise;
+            const btn = document.getElementById('btn-noise');
+            if (STATE.injectNoise) btn.classList.add('active');
+            else btn.classList.remove('active');
+        };
+
+        document.getElementById('msg-freq').oninput = (e) => {
+            STATE.msgFreq = parseFloat(e.target.value);
+            document.getElementById('val-msg-freq').innerText = STATE.msgFreq + " Hz";
+        };
+
+        document.getElementById('car-freq').oninput = (e) => {
+            STATE.carrierFreq = parseFloat(e.target.value);
+            document.getElementById('val-car-freq').innerText = STATE.carrierFreq + " Hz";
+        };
+
+        document.getElementById('mod-idx').oninput = (e) => {
+            STATE.modIndex = parseFloat(e.target.value);
+            document.getElementById('val-mod-idx').innerText = STATE.modIndex.toFixed(1);
+        };
+
+        document.getElementById('amp').oninput = (e) => {
+            STATE.amp = parseFloat(e.target.value);
+            document.getElementById('val-amp').innerText = Math.round(STATE.amp * 100) + "%";
+        };
+
+        // Start
+        loop();
+
+    </script>
+</body>
+
+</html>

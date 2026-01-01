@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Ecosystem</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #22c55e;
+            font-family: 'Fredoka', sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .counters {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: white;
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-weight: bold;
+        }
+
+        .btn {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: #ef4444;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="counters">
+        <span style="color:white; -webkit-text-stroke: 1px black;">🐰 Rabbits: <span id="r-count">0</span></span><br>
+        <span style="color:orange; -webkit-text-stroke: 1px black;">🦊 Foxes: <span id="f-count">0</span></span>
+    </div>
+
+    <div class="btn" onclick="killFoxes()">REMOVE ALL PREDATORS ⚠</div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const rc = document.getElementById('r-count');
+        const fc = document.getElementById('f-count');
+
+        let width, height;
+        let GRASS = [];
+        let RABBITS = [];
+        let FOXE = [];
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+
+            // Init
+            for (let i = 0; i < 50; i++) spawnRabbit();
+            for (let i = 0; i < 5; i++) spawnFox();
+        }
+        window.addEventListener('resize', resize);
+
+        function spawnRabbit(x, y) {
+            RABBITS.push({
+                x: x || Math.random() * width, y: y || Math.random() * height,
+                vx: 0, vy: 0, energy: 100
+            });
+        }
+        function spawnFox(x, y) {
+            FOXE.push({
+                x: x || Math.random() * width, y: y || Math.random() * height,
+                vx: 0, vy: 0, energy: 200
+            });
+        }
+
+        window.killFoxes = () => FOXE = [];
+
+        // Grass Spawner
+        setInterval(() => {
+            if (GRASS.length < 500) {
+                GRASS.push({ x: Math.random() * width, y: Math.random() * height });
+            }
+        }, 100);
+
+        function resizeInit() { resize(); }
+        setTimeout(resizeInit, 100); // delay init
+
+        function dist(a, b) {
+            const dx = a.x - b.x; const dy = a.y - b.y; return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function loop() {
+            // Draw Grass Tiles
+            ctx.fillStyle = '#16a34a';
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.fillStyle = '#4ade80';
+            GRASS.forEach(g => ctx.fillRect(g.x, g.y, 4, 4));
+
+            // --- RABBITS ---
+            for (let i = RABBITS.length - 1; i >= 0; i--) {
+                let r = RABBITS[i];
+                // Seek Grass
+                let closest = null; let minD = 100;
+                // Simple: Pick random close one
+                // Optimization: Just wander mostly
+                r.vx += (Math.random() - 0.5); r.vy += (Math.random() - 0.5);
+
+                // Eat
+                for (let j = GRASS.length - 1; j >= 0; j--) {
+                    if (dist(r, GRASS[j]) < 10) {
+                        GRASS.splice(j, 1);
+                        r.energy += 20;
+                        if (r.energy > 200) { // Reproduce
+                            spawnRabbit(r.x, r.y);
+                            r.energy = 100;
+                        }
+                    }
+                }
+
+                // Flee Fox
+                FOXE.forEach(f => {
+                    const d = dist(r, f);
+                    if (d < 100) {
+                        const dx = r.x - f.x; const dy = r.y - f.y;
+                        r.vx += (dx / d) * 0.5; r.vy += (dy / d) * 0.5;
+                    }
+                });
+
+                r.x += r.vx; r.y += r.vy;
+                r.vx *= 0.9; r.vy *= 0.9;
+
+                // Bounds
+                if (r.x < 0) r.x = width; if (r.x > width) r.x = 0; if (r.y < 0) r.y = height; if (r.y > height) r.y = 0;
+
+                // Draw
+                ctx.fillStyle = '#fff';
+                ctx.beginPath(); ctx.arc(r.x, r.y, 5, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // --- FOXES ---
+            for (let i = FOXE.length - 1; i >= 0; i--) {
+                let f = FOXE[i];
+                f.energy -= 0.5;
+                if (f.energy <= 0) { FOXE.splice(i, 1); continue; }
+
+                // Seek Rabbit
+                let closest = null; let minD = 200;
+                RABBITS.forEach(r => {
+                    const d = dist(f, r);
+                    if (d < minD) { minD = d; closest = r; }
+                });
+
+                if (closest) {
+                    const dx = closest.x - f.x; const dy = closest.y - f.y;
+                    f.vx += (dx / minD) * 0.5; f.vy += (dy / minD) * 0.5;
+
+                    if (minD < 10) {
+                        // Eat
+                        const idx = RABBITS.indexOf(closest);
+                        if (idx > -1) {
+                            RABBITS.splice(idx, 1);
+                            f.energy += 100;
+                            if (f.energy > 400) { spawnFox(f.x, f.y); f.energy = 200; }
+                        }
+                    }
+                } else {
+                    f.vx += (Math.random() - 0.5); f.vy += (Math.random() - 0.5);
+                }
+
+                f.x += f.vx; f.y += f.vy;
+                f.vx *= 0.9; f.vy *= 0.9;
+
+                if (f.x < 0) f.x = width; if (f.x > width) f.x = 0; if (f.y < 0) f.y = height; if (f.y > height) f.y = 0;
+
+                ctx.fillStyle = '#f97316';
+                ctx.beginPath(); ctx.rect(f.x - 5, f.y - 5, 10, 10); ctx.fill();
+            }
+
+            rc.innerText = RABBITS.length;
+            fc.innerText = FOXE.length;
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Dynamic Equilibrium</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #e2e8f0;
+            font-family: 'Roboto Mono', monospace;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* CHAMBER VIEW */
+        .chamber-view {
+            flex: 1;
+            position: relative;
+            background: #cbd5e1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #vessels {
+            position: relative;
+            width: 600px;
+            height: 400px;
+            display: flex;
+            gap: 50px;
+        }
+
+        .tank {
+            width: 200px;
+            height: 300px;
+            background: rgba(255, 255, 255, 0.8);
+            border: 4px solid #94a3b8;
+            border-radius: 20px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.1);
+            transition: all 0.5s;
+        }
+
+        .tank-label {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            font-weight: bold;
+            color: #64748b;
+        }
+
+        /* Connecting Tube */
+        #tube {
+            position: absolute;
+            top: 100px;
+            left: 195px;
+            width: 210px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.6);
+            border-top: 4px solid #94a3b8;
+            border-bottom: 4px solid #94a3b8;
+            z-index: 0;
+        }
+
+        /* PISTON (Pressure) */
+        .piston {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 20px;
+            background: #475569;
+            transition: top 0.5s;
+        }
+
+        /* SCALES */
+        .balance-scale {
+            width: 300px;
+            height: 20px;
+            background: #94a3b8;
+            border-radius: 10px;
+            position: absolute;
+            top: -50px;
+            left: 150px;
+            transform-origin: center;
+            transition: transform 0.5s;
+        }
+
+        .balance-pivot {
+            width: 0;
+            height: 0;
+            border-left: 20px solid transparent;
+            border-right: 20px solid transparent;
+            border-bottom: 40px solid #475569;
+            position: absolute;
+            top: -30px;
+            left: 280px;
+        }
+
+        /* CONTROLS RIGHT */
+        .sidebar {
+            width: 300px;
+            background: #fff;
+            padding: 20px;
+            border-left: 1px solid #ccc;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .btn-stress {
+            padding: 15px;
+            border: none;
+            font-weight: bold;
+            color: white;
+            cursor: pointer;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .btn-heat {
+            background: #ef4444;
+        }
+
+        .btn-cool {
+            background: #3b82f6;
+        }
+
+        .btn-press {
+            background: #64748b;
+        }
+
+        .btn-vol {
+            background: #10b981;
+        }
+
+        .btn-stress:active {
+            transform: scale(0.95);
+        }
+
+        canvas#sim-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="chamber-view">
+            <div id="vessels">
+                <div class="balance-pivot"></div>
+                <div class="balance-scale" id="scale-bar"></div>
+
+                <!-- TUBE -->
+                <div id="tube"></div>
+
+                <!-- TANKS -->
+                <div class="tank" id="tank-l">
+                    <div class="piston" id="pist-l"></div>
+                    <div class="tank-label">REACTANTS (N2 + H2)</div>
+                </div>
+
+                <div class="tank" id="tank-r">
+                    <div class="piston" id="pist-r"></div>
+                    <div class="tank-label">PRODUCTS (NH3)</div>
+                </div>
+
+                <canvas id="sim-canvas" width="600" height="400"></canvas>
+            </div>
+
+            <div style="margin-top:20px; font-size:20px; font-weight:bold; color:#475569;">
+                Le Chatelier’s Principle
+            </div>
+            <div style="color:#64748b; font-size:14px;">
+                Temp: <span id="val-temp">300</span>K | Pressure: <span id="val-press">1.0</span> atm
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <h3>STRESS TESTS</h3>
+            <button class="btn-stress btn-heat" onclick="applyStress('HEAT')">ADD HEAT (+Temp)</button>
+            <button class="btn-stress btn-cool" onclick="applyStress('COOL')">REMOVE HEAT (-Temp)</button>
+            <button class="btn-stress btn-press" onclick="applyStress('PRESS')">INCREASE PRESSURE</button>
+            <button class="btn-stress btn-vol" onclick="applyStress('VOL')">INCREASE VOLUME</button>
+
+            <div style="height:200px;">
+                <canvas id="chart-canvas"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * EQUILIBRIUM SIMULATOR
+         * Haber Process: N2 + 3H2 <=> 2NH3 + Heat
+         * Exothermic forward.
+         * Fewer moles on Product side (4 -> 2).
+         */
+
+        const canvas = document.getElementById('sim-canvas');
+        const ctx = canvas.getContext('2d');
+        const pistL = document.getElementById('pist-l');
+        const pistR = document.getElementById('pist-r');
+        const scaleBar = document.getElementById('scale-bar');
+
+        // --- PHYSICS STATE ---
+        let PARTS = []; // { x, y, vx, vy, type: 'R'|'P', r: radius }
+        let TEMP = 300;
+        let VOLUME = 1.0; // 0.5 (compressed) to 1.0 (normal)
+
+        const TANK_Y = 50; // In relative coords of #vessels
+        const TANK_H = 300;
+        const TANK_L_X = 0;
+        const TANK_R_X = 400; // 200w + 50gap + 200w? gap is 50. 
+        // CSS: gap 50. tank w 200.
+        // TankL: 0 to 200.
+        // TankR: 250 to 450.
+        // Offset logic needed.
+
+        // Let's hardcode sim bounds based on CSS
+        const BOUNDS_L = { x: 0, w: 200, y: 0, h: 300 };
+        const BOUNDS_R = { x: 250, w: 200, y: 0, h: 300 };
+        const TUBE = { x: 200, w: 50, y: 100, h: 40 };
+
+        // --- REACT LOGIC ---
+        // R -> P rate (k1)
+        // P -> R rate (k-1)
+        // Heat favors P->R (Reverse) because Exothermic.
+        // Pressure favors R->P (Forward) because 4 moles -> 2 moles (less volume).
+
+        function init() {
+            // Spawn initial
+            for (let i = 0; i < 40; i++) spawn('R');
+            for (let i = 0; i < 10; i++) spawn('P');
+
+            updateChart();
+            loop();
+        }
+
+        function spawn(type) {
+            const isR = type === 'R';
+            const b = isR ? BOUNDS_L : BOUNDS_R;
+            PARTS.push({
+                type,
+                x: b.x + Math.random() * b.w,
+                y: b.y + Math.random() * b.h,
+                vx: (Math.random() - 0.5) * 2,
+                vy: (Math.random() - 0.5) * 2,
+                r: isR ? 3 : 5 // Products (NH3) bigger?
+            });
+        }
+
+        window.applyStress = (type) => {
+            if (type === 'HEAT') TEMP += 50;
+            if (type === 'COOL') TEMP = Math.max(100, TEMP - 50);
+            if (type === 'PRESS') VOLUME = 0.6;
+            if (type === 'VOL') VOLUME = 1.0;
+
+            updateUI();
+        };
+
+        function updateUI() {
+            document.getElementById('val-temp').innerText = TEMP;
+            document.getElementById('val-press').innerText = (1 / VOLUME).toFixed(1);
+
+            // Move Pistons
+            const h = 300 * (1 - VOLUME); // Piston depth
+            pistL.style.height = h + "px";
+            pistR.style.height = h + "px"; // Assuming total compression
+
+            // Adjust Bounds for physics
+            BOUNDS_L.y = h;
+            BOUNDS_L.h = 300 - h;
+            BOUNDS_R.y = h;
+            BOUNDS_R.h = 300 - h;
+        }
+
+        // --- PHYSICS LOOP ---
+        function loop() {
+            // Reaction Rates
+            // k1 ~ P (favors forward) / T (favors reverse)
+            // Simpler: Probability of crossing tube and converting
+
+            // Particle Speed ~ Temp
+            const speed = (TEMP / 300);
+
+            PARTS.forEach(p => {
+                p.x += p.vx * speed;
+                p.y += p.vy * speed;
+
+                // Current Container
+                let b = (p.x < 200) ? BOUNDS_L : (p.x > 250 ? BOUNDS_R : null);
+
+                // Tube?
+                const inTube = (p.x >= 200 && p.x <= 250 && p.y >= 100 && p.y <= 140);
+
+                if (!inTube) {
+                    // Wall Collisions
+                    if (b) {
+                        if (p.x < b.x) { p.x = b.x; p.vx *= -1; }
+                        if (p.x > b.x + b.w) { p.x = b.x + b.w; p.vx *= -1; }
+                        if (p.y < b.y) { p.y = b.y; p.vy *= -1; }
+                        if (p.y > b.y + b.h) { p.y = b.y + b.h; p.vy *= -1; }
+
+                        // Check Tube Entry
+                        if (p.y >= 100 && p.y <= 130) { // Slight overlap allowance
+                            if (p.x > 190 && p.x < 200) { /* entering tube right */ }
+                            if (p.x > 250 && p.x < 260) { /* entering tube left */ }
+                        } else {
+                            // Block x movement into tube area if not aligned Y
+                            if (p.x > 200 && p.x < 210) p.x = 200;
+                            if (p.x < 250 && p.x > 240) p.x = 250;
+                        }
+                    }
+                }
+
+                // Reaction Logic (In Tube)
+                if (inTube) {
+                    // Chance to React?
+                    // Forward: R -> P. Favored by High P, Low T.
+                    // Reverse: P -> R. Favored by High T, Low P.
+
+                    if (p.type === 'R') {
+                        // Attempt Forward
+                        // Prob ~ Pressure / Temp
+                        const prob = 0.01 * (1 / VOLUME) / (TEMP / 300);
+                        if (Math.random() < prob) {
+                            p.type = 'P';
+                            p.r = 5;
+                            p.vx = 2; // Shoot to right
+                        }
+                    } else {
+                        // Attempt Reverse
+                        // Prob ~ Temp / Pressure
+                        const prob = 0.01 * (TEMP / 300) / (1 / VOLUME);
+                        if (Math.random() < prob) {
+                            p.type = 'R';
+                            p.r = 3;
+                            p.vx = -2; // Shoot to left
+                        }
+                    }
+                }
+            });
+
+            // Count
+            const cntR = PARTS.filter(p => p.type === 'R').length;
+            const cntP = PARTS.filter(p => p.type === 'P').length;
+
+            // Balance Scale Tilt
+            // Heavier side drops (more moles? Or mass?)
+            const mass = cntR * 1 + cntP * 2; // Assume P heavier?
+            // Actually scale usually represents concentration balance.
+            const tilt = (cntR - cntP) * 1; // deg
+            scaleBar.style.transform = `rotate(${tilt}deg)`;
+
+            render();
+
+            // Chart update
+            if (Math.random() < 0.1) addData(cntR, cntP);
+
+            requestAnimationFrame(loop);
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, 600, 400);
+
+            PARTS.forEach(p => {
+                ctx.fillStyle = (p.type === 'R') ? '#3b82f6' : '#22c55e';
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+            });
+        }
+
+        // --- CHART ---
+        const ctxChart = document.getElementById('chart-canvas').getContext('2d');
+        const chart = new Chart(ctxChart, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'Reactants', data: [], borderColor: '#3b82f6' },
+                    { label: 'Products', data: [], borderColor: '#22c55e' }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                animation: false,
+                elements: { point: { radius: 0 } },
+                scales: { y: { min: 0, max: 60 } }
+            }
+        });
+
+        function addData(r, p) {
+            const l = chart.data.labels;
+            const d0 = chart.data.datasets[0].data;
+            const d1 = chart.data.datasets[1].data;
+
+            l.push('');
+            d0.push(r);
+            d1.push(p);
+
+            if (l.length > 50) { l.shift(); d0.shift(); d1.shift(); }
+
+            chart.update();
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

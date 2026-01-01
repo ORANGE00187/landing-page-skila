@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | IK Skeleton</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="controls">
+        <label><input type="checkbox" id="muscles"> Show Muscles</label>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const musCheck = document.getElementById('muscles');
+
+        let width, height;
+
+        // Bone Lengths
+        const L1 = 150; // Humerus (Upper)
+        const L2 = 140; // Radius (Lower)
+
+        // Fixed Shoulder
+        let SHOULDER = { x: 300, y: 300 };
+        // Target (Mouse)
+        let TARGET = { x: 500, y: 300 };
+
+        // IK Angles
+        let A1 = 0; // Shoulder
+        let A2 = 0; // Elbow
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            SHOULDER.x = width / 3; SHOULDER.y = height / 2;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Mouse IK
+        canvas.addEventListener('mousemove', e => {
+            TARGET.x = e.clientX; TARGET.y = e.clientY;
+            solveIK();
+        });
+
+        function solveIK() {
+            // Law of Cosines
+            // Dist to Target
+            let dx = TARGET.x - SHOULDER.x;
+            let dy = TARGET.y - SHOULDER.y;
+            let dist = Math.sqrt(dx * dx + dy * dy);
+
+            // Clamp dist
+            dist = Math.min(dist, L1 + L2 - 1);
+            dist = Math.max(dist, 50); // Min dist
+
+            // Angle to target
+            let atan = Math.atan2(dy, dx);
+
+            // Cosines
+            // c^2 = a^2 + b^2 - 2ab cos(C)
+            // A2 (Elbow angle internal)
+            // dist^2 = L1^2 + L2^2 - 2*L1*L2*cos(elbow_inner)
+            let cosElbow = (L1 * L1 + L2 * L2 - dist * dist) / (2 * L1 * L2);
+            // Invert angle for external bend?
+            // Actually usually we calc Angle relative to L1.
+
+            // Let's find angle of shoulders triangle
+            // L2^2 = L1^2 + dist^2 - 2*L1*dist*cos(alpha)
+            let cosAlpha = (L1 * L1 + dist * dist - L2 * L2) / (2 * L1 * dist);
+            let alpha = Math.acos(Math.max(-1, Math.min(1, cosAlpha)));
+
+            // Elbow angle
+            let elbowInner = Math.acos(Math.max(-1, Math.min(1, cosElbow)));
+
+            // Shoulder Angle = atan + alpha
+            // We want elbow to bend "Down" or "Up"? Usually Down for arms in simple 2D view unless specified.
+            // Let's assume standard arm logic. 
+            // If target is above shoulder, maybe flip?
+
+            A1 = atan - alpha;
+            A2 = Math.PI - elbowInner; // Relative angle?
+
+            // Wait, Forward Kinematics check
+            // J1 = Shoulder
+            // J2 = J1 + vec(L1, A1)
+            // J3 = J2 + vec(L2, A1 + A2)
+        }
+
+        function loop() {
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, width, height);
+
+            // Calc Joints (FK)
+            let J1 = SHOULDER;
+            let J2 = { x: J1.x + Math.cos(A1) * L1, y: J1.y + Math.sin(A1) * L1 };
+            let J3 = { x: J2.x + Math.cos(A1 + A2) * L2, y: J2.y + Math.sin(A1 + A2) * L2 };
+
+            // Draw Muscles (Bicep/Tricep)
+            if (musCheck.checked) {
+                // Bicep: Top of Humerus to Top of Radius (Inside of bend)
+                // Flex: Depends on A2. If A2 is large (straight), muscle thin. If A2 small (bent), muscle bulge.
+                // Wait, A2=0 is folded back? A2=PI is straight?
+                // Logic based on previous calc: A1+A2 is global angle. A2 is relative.
+                // If A2 ~ 0 (folded), Bicep bulge.
+
+                // Let's just draw lines with width based on A2
+                let flex = (Math.PI - A2); // 0 (straight) to PI (bent)
+                let bulge = 10 + flex * 10;
+
+                // Bicep (Top)
+                ctx.strokeStyle = '#ef4444'; ctx.lineWidth = bulge; ctx.lineCap = 'round';
+                ctx.beginPath(); ctx.moveTo(J1.x, J1.y - 10); ctx.lineTo(J2.x, J2.y - 10); ctx.stroke();
+
+                // Tricep (Bottom) - opposites
+                ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 30 - bulge;
+                ctx.beginPath(); ctx.moveTo(J1.x, J1.y + 10); ctx.lineTo(J2.x, J2.y + 10); ctx.stroke();
+            }
+
+            // Draw Bones
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 15; ctx.lineCap = 'round';
+            ctx.shadowBlur = 15; ctx.shadowColor = 'cyan';
+
+            // Bone 1
+            ctx.beginPath(); ctx.moveTo(J1.x, J1.y); ctx.lineTo(J2.x, J2.y); ctx.stroke();
+            // Bone 2
+            ctx.beginPath(); ctx.moveTo(J2.x, J2.y); ctx.lineTo(J3.x, J3.y); ctx.stroke();
+
+            ctx.shadowBlur = 0;
+
+            // Joints
+            ctx.fillStyle = 'cyan'; ctx.beginPath(); ctx.arc(J1.x, J1.y, 10, 0, Math.PI * 2); ctx.fill(); // Shoulder
+            ctx.fillStyle = '#f0f'; ctx.beginPath(); ctx.arc(J2.x, J2.y, 8, 0, Math.PI * 2); ctx.fill(); // Elbow
+            ctx.fillStyle = 'yellow'; ctx.beginPath(); ctx.arc(J3.x, J3.y, 8, 0, Math.PI * 2); ctx.fill(); // Wrist
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+
+    </script>
+</body>
+
+</html>

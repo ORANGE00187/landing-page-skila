@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skila.ai | Galvanic Cell</title>
+    <!-- FONTS -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0F172A;
+            /* Slate 900 */
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+            color: white;
+        }
+
+        #sim-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* UI */
+        .ui-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        /* HUD */
+        .hud-panel {
+            position: absolute;
+            top: 40px;
+            right: 40px;
+            width: 300px;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 24px;
+            pointer-events: auto;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .voltage-display {
+            background: #000;
+            border: 2px solid #334155;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            margin-bottom: 20px;
+            color: #EF4444;
+            /* LED Red */
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 32px;
+            font-weight: 700;
+            text-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-label {
+            font-size: 12px;
+            color: #94A3B8;
+            margin-bottom: 8px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        select {
+            width: 100%;
+            padding: 10px;
+            background: #1E293B;
+            border: 1px solid #334155;
+            color: white;
+            border-radius: 6px;
+            font-family: 'Inter';
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .switch-btn {
+            width: 100%;
+            padding: 14px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 14px;
+            transition: all 0.2s;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .switch-off {
+            background: #334155;
+            color: #94A3B8;
+            border: 1px solid #475569;
+        }
+
+        .switch-on {
+            background: #22C55E;
+            color: #fff;
+            border: 1px solid #16A34A;
+            box-shadow: 0 0 20px rgba(34, 197, 94, 0.4);
+        }
+
+        .lens-hint {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.6);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: #cbd5e1;
+            backdrop-filter: blur(4px);
+            pointer-events: auto;
+            cursor: grab;
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="sim-canvas"></canvas>
+
+    <div class="ui-layer">
+        <div class="hud-panel">
+            <div class="flex items-center justify-between mb-4">
+                <div class="text-xs text-yellow-500 font-bold uppercase tracking-widest">
+                    <i class="fas fa-bolt mr-2"></i>Voltaic Lab
+                </div>
+            </div>
+
+            <div class="voltage-display" id="voltage-text">1.10 V</div>
+
+            <button id="circuit-switch" class="switch-btn switch-off mb-6" onclick="toggleCircuit()">
+                <i class="fas fa-power-off"></i> Circuit Open
+            </button>
+
+            <div class="control-group">
+                <div class="control-label">Anode (Oxidation)</div>
+                <select id="anode-select" onchange="updateCell()">
+                    <option value="Zn" selected>Zinc (Zn)</option>
+                    <option value="Mg">Magnesium (Mg)</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <div class="control-label">Cathode (Reduction)</div>
+                <select id="cathode-select" onchange="updateCell()">
+                    <option value="Cu" selected>Copper (Cu)</option>
+                    <option value="Ag">Silver (Ag)</option>
+                </select>
+            </div>
+
+            <div class="text-[10px] text-slate-500 mt-2">
+                Oxidation: M &rarr; M<sup>2+</sup> + 2e<sup>-</sup><br>
+                Reduction: M<sup>2+</sup> + 2e<sup>-</sup> &rarr; M
+            </div>
+        </div>
+
+        <div class="lens-hint" id="lens-handle">
+            <i class="fas fa-search mr-2"></i> Drag Lens to inspect Atoms
+        </div>
+    </div>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        /**
+         * SKILA.ai - Galvanic Cell Simulator
+         * - Redox Physics
+         * - Electrode Erosion/Plating
+         * - Atomic Magnifying Lens
+         */
+
+        const canvas = document.getElementById('sim-canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+        let running = false;
+
+        // Lens State
+        let LENS = { x: 0, y: 0, r: 80, dragging: false, active: false };
+
+        // Metals DB (Standard Reduction Potentials)
+        const METALS = {
+            'Zn': { name: 'Zinc', E: -0.76, color: '#94a3b8', ionColor: 'rgba(255,255,255,0.1)' },
+            'Cu': { name: 'Copper', E: +0.34, color: '#f97316', ionColor: 'rgba(59,130,246,0.3)' }, // Blue solution
+            'Mg': { name: 'Magnesium', E: -2.37, color: '#cbd5e1', ionColor: 'rgba(255,255,255,0.1)' },
+            'Ag': { name: 'Silver', E: +0.80, color: '#e2e8f0', ionColor: 'rgba(255,255,255,0.1)' }
+        };
+
+        // Cell State
+        let ANODE = 'Zn';
+        let CATHODE = 'Cu';
+        let VOLTAGE = 1.10;
+        let TIME = 0;
+
+        // Electrode Geometry (Dynamic Erosion)
+        let anodeW = 60, cathodeW = 60;
+        let electronPath = 0; // offset for flow animation
+
+        // Particles
+        let IONS = []; // {x, y, type, vx, vy}
+        let ATOMS_FX = []; // For atomic view
+
+        function updateCell() {
+            ANODE = document.getElementById('anode-select').value;
+            CATHODE = document.getElementById('cathode-select').value;
+
+            // Calc Voltage E_cell = E_cat - E_anode
+            let eCathode = METALS[CATHODE].E;
+            let eAnode = METALS[ANODE].E;
+            VOLTAGE = Math.max(0, eCathode - eAnode);
+
+            // Reset geometry
+            anodeW = 60; cathodeW = 60;
+            running = false;
+            document.getElementById('circuit-switch').className = "switch-btn switch-off";
+            document.getElementById('circuit-switch').innerHTML = '<i class="fas fa-power-off"></i> Circuit Open';
+
+            document.getElementById('voltage-text').innerText = VOLTAGE.toFixed(2) + " V";
+            IONS = [];
+        }
+
+        window.toggleCircuit = () => {
+            running = !running;
+            const btn = document.getElementById('circuit-switch');
+            if (running) {
+                btn.className = "switch-btn switch-on";
+                btn.innerHTML = '<i class="fas fa-bolt"></i> Circuit Closed';
+            } else {
+                btn.className = "switch-btn switch-off";
+                btn.innerHTML = '<i class="fas fa-power-off"></i> Circuit Open';
+            }
+        };
+
+        // --- DRAWING HELPERS ---
+
+        function drawBeaker(x, y, w, h, liquidColor) {
+            ctx.save();
+            // Liquid
+            ctx.fillStyle = liquidColor;
+            ctx.fillRect(x + 5, y + 20, w - 10, h - 25);
+
+            // Glass
+            ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x, y + h - 10);
+            ctx.quadraticCurveTo(x, y + h, x + 10, y + h); // corner
+            ctx.lineTo(x + w - 10, y + h);
+            ctx.quadraticCurveTo(x + w, y + h, x + w, y + h - 10); // corner
+            ctx.lineTo(x + w, y);
+            ctx.stroke();
+
+            // Reflection
+            ctx.fillStyle = 'rgba(255,255,255,0.1)';
+            ctx.fillRect(x + 10, y + 30, 10, h - 50);
+
+            ctx.restore();
+        }
+
+        function drawElectrode(x, y, w, h, metalKey, isEroding) {
+            const m = METALS[metalKey];
+            ctx.fillStyle = m.color;
+
+            // Draw roughness if eroding
+            if (isEroding && running) {
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(x + w, y);
+                ctx.lineTo(x + w, y + h);
+                // Jagged bottom/sides
+                for (let i = w; i > 0; i -= 5) {
+                    ctx.lineTo(x + i, y + h - (Math.random() * 2));
+                }
+                ctx.lineTo(x, y + h); // close
+                ctx.fill();
+            } else {
+                ctx.fillRect(x, y, w, h);
+            }
+
+            // Texture/Shine
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.fillRect(x, y, w / 4, h);
+        }
+
+        function drawSaltBridge(x1, y1, x2, y2) {
+            // U-Shape
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255,255,255,0.4)'; // Glass
+            ctx.lineWidth = 20;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x1, y1 - 50);
+            ctx.lineTo(x2, y1 - 50);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+
+            // Inner Gel
+            ctx.strokeStyle = 'rgba(255,255,255,0.8)'; // Gel
+            ctx.lineWidth = 14;
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        function drawWire(x1, y1, x2, y2) {
+            ctx.strokeStyle = '#f59e0b'; // Gold/Copper wire
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x1, y1 - 100);
+            ctx.lineTo(width / 2, y1 - 100); // To bulb
+            ctx.lineTo(x2, y2 - 100);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+
+            // Electrons
+            if (running) {
+                electronPath -= (VOLTAGE * 2); // Speed proportional to V
+                ctx.fillStyle = '#eff6ff'; // Electron white
+                ctx.shadowColor = '#ffff00'; ctx.shadowBlur = 10;
+
+                // Path logic is simpler: Just dots moving along the line segments
+                // Segment 1: Anode Up
+                // Segment 2: Across
+                // Segment 3: Cathode Down
+
+                const totalLen = 100 + (x2 - x1) + 100; // rough
+                const spacing = 30;
+
+                for (let i = 0; i < totalLen; i += spacing) {
+                    let d = (i + electronPath) % totalLen;
+                    if (d < 0) d += totalLen;
+
+                    let ex, ey;
+                    if (d < 100) { // Up
+                        ex = x1; ey = y1 - d;
+                    } else if (d < 100 + (x2 - x1)) { // Across
+                        ex = x1 + (d - 100); ey = y1 - 100;
+                    } else { // Down
+                        ex = x2; ey = (y1 - 100) + (d - (100 + (x2 - x1)));
+                    }
+
+                    ctx.beginPath(); ctx.arc(ex, ey, 2, 0, Math.PI * 2); ctx.fill();
+                }
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        function drawBulb(x, y) {
+            // Bulb Glass
+            ctx.beginPath();
+            ctx.arc(x, y, 20, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.fill();
+            ctx.strokeStyle = '#94a3b8'; ctx.stroke();
+
+            // Filament
+            ctx.beginPath(); ctx.moveTo(x - 10, y + 15); ctx.lineTo(x - 5, y); ctx.lineTo(x + 5, y); ctx.lineTo(x + 10, y + 15);
+            ctx.strokeStyle = '#cbd5e1'; ctx.stroke();
+
+            if (running && VOLTAGE > 0) {
+                // Glow
+                const intensity = VOLTAGE / 2; // Approximate
+                const r = 20 + (intensity * 40);
+                const grad = ctx.createRadialGradient(x, y, 10, x, y, r);
+                grad.addColorStop(0, 'rgba(253, 224, 71, 1)');
+                grad.addColorStop(1, 'rgba(253, 224, 71, 0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+            }
+        }
+
+        // --- LENS LOGIC ---
+        function drawLensView() {
+            if (LENS.active) {
+                ctx.save();
+
+                // Clip circle
+                ctx.beginPath(); ctx.arc(LENS.x, LENS.y, LENS.r, 0, Math.PI * 2);
+                ctx.clip();
+
+                // Draw Magnified BG (Darker)
+                ctx.fillStyle = '#020617'; ctx.fillRect(LENS.x - LENS.r, LENS.y - LENS.r, LENS.r * 2, LENS.r * 2);
+
+                // Determine what we are looking at
+                // Anode (Left) or Cathode (Right)?
+                const electrodeY = height / 2 + 50;
+                const anodeX = width / 2 - 150;
+                const cathodeX = width / 2 + 150;
+
+                let mode = null;
+                if (Math.abs(LENS.x - anodeX) < 80 && Math.abs(LENS.y - electrodeY) < 100) mode = 'anode';
+                if (Math.abs(LENS.x - cathodeX) < 80 && Math.abs(LENS.y - electrodeY) < 100) mode = 'cathode';
+
+                if (mode) {
+                    // Title
+                    ctx.fillStyle = 'white'; ctx.font = 'bold 12px Inter'; ctx.textAlign = 'center';
+                    ctx.fillText(mode === 'anode' ? "OXIDATION (Lose e-)" : "REDUCTION (Gain e-)", LENS.x, LENS.y - 50);
+
+                    // Atoms Physics
+                    drawAtomicPhysics(mode);
+                } else {
+                    ctx.fillStyle = '#64748b'; ctx.textAlign = 'center';
+                    ctx.fillText("No Reaction Here", LENS.x, LENS.y);
+                }
+
+                // Lens Ring
+                ctx.restore();
+                ctx.beginPath(); ctx.arc(LENS.x, LENS.y, LENS.r, 0, Math.PI * 2);
+                ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.stroke();
+                // Handle
+                ctx.beginPath(); ctx.moveTo(LENS.x + LENS.r * 0.7, LENS.y + LENS.r * 0.7);
+                ctx.lineTo(LENS.x + LENS.r * 1.2, LENS.y + LENS.r * 1.2);
+                ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 10; ctx.stroke();
+            }
+        }
+
+        function drawAtomicPhysics(mode) {
+            // Visualize Zn -> Zn2+ + 2e (Anode) or Cu2+ + 2e -> Cu (Cathode)
+            const cx = LENS.x;
+            const cy = LENS.y;
+
+            // Surface Line
+            ctx.fillStyle = mode === 'anode' ? METALS[ANODE].color : METALS[CATHODE].color;
+            ctx.fillRect(cx - 80, cy, 160, 80); // Solid metal block at bottom
+
+            // Solution Area
+            ctx.fillStyle = mode === 'anode' ? METALS[ANODE].ionColor : METALS[CATHODE].ionColor;
+            ctx.fillRect(cx - 80, cy - 80, 160, 80);
+
+            if (!running) return;
+
+            // Spawn Particles
+            if (Math.random() > 0.9) {
+                if (mode === 'anode') {
+                    // Oxidation: Atom leaves surface
+                    ATOMS_FX.push({ x: cx + (Math.random() - 0.5) * 100, y: cy + 5, vy: -1, type: 'ion', label: ANODE + '2+' });
+                    // Electrons fly away
+                    ATOMS_FX.push({ x: cx + (Math.random() - 0.5) * 100, y: cy + 5, vy: -2, vx: -2, type: 'e', label: 'e-' });
+                } else {
+                    // Reduction: Ion lands on surface
+                    ATOMS_FX.push({ x: cx + (Math.random() - 0.5) * 100, y: cy - 60, vy: 1, type: 'ion', label: CATHODE + '2+' });
+                }
+            }
+
+            // Draw FX
+            ATOMS_FX.forEach((p, i) => {
+                p.x += (p.vx || 0);
+                p.y += p.vy;
+
+                ctx.font = '10px JetBrains Mono';
+                if (p.type === 'ion') {
+                    // Ion
+                    ctx.beginPath(); ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+                    ctx.fillStyle = 'white'; ctx.strokeStyle = 'black';
+                    ctx.fill(); ctx.stroke();
+                    ctx.fillStyle = 'black'; ctx.fillText(p.label, p.x - 8, p.y + 3);
+
+                    if (mode === 'cathode' && p.y > cy) {
+                        ATOMS_FX.splice(i, 1); // Plated
+                    }
+                } else {
+                    // Electron
+                    ctx.fillStyle = '#facc15';
+                    ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
+                }
+
+                if (p.y < cy - 80 || p.y > cy + 80) ATOMS_FX.splice(i, 1);
+            });
+        }
+
+        // --- MAIN LOOP ---
+        function loop() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+
+            ctx.fillStyle = '#0F172A';
+            ctx.fillRect(0, 0, width, height);
+
+            const tableY = height / 2 + 150;
+            const beakerW = 120;
+            const beakerH = 180;
+            const gap = 100;
+
+            // Lab Bench
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(0, tableY, width, height - tableY);
+            ctx.fillStyle = '#334155'; ctx.fillRect(0, tableY, width, 5);
+
+            const leftX = width / 2 - beakerW - gap / 2;
+            const rightX = width / 2 + gap / 2;
+            const beakerY = tableY - beakerH;
+
+            // Update Erosion
+            if (running) {
+                if (anodeW > 10) anodeW -= 0.05; // Dissolve
+                if (cathodeW < beakerW - 20) cathodeW += 0.05; // Plate
+
+                // Decay voltage (Nernst-ish)
+                if (VOLTAGE > 0) VOLTAGE -= 0.0005;
+                if (VOLTAGE < 0) VOLTAGE = 0;
+                document.getElementById('voltage-text').innerText = VOLTAGE.toFixed(2) + " V";
+
+                if (VOLTAGE <= 0) running = false;
+            }
+
+            // Beaker Backs
+            // Left (Anode)
+            drawBeaker(leftX, beakerY, beakerW, beakerH, METALS[ANODE].ionColor);
+            // Right (Cathode)
+            drawBeaker(rightX, beakerY, beakerW, beakerH, METALS[CATHODE].ionColor);
+
+            // Electrodes
+            drawElectrode(leftX + (beakerW - anodeW) / 2, beakerY + 20, anodeW, beakerH - 40, ANODE, true);
+            drawElectrode(rightX + (beakerW - cathodeW) / 2, beakerY + 20, cathodeW, beakerH - 40, CATHODE, false);
+
+            // Salt Bridge
+            drawSaltBridge(leftX + beakerW - 20, beakerY + 60, rightX + 20, beakerY + 60);
+
+            // Wiring
+            const wireY = beakerY + 20;
+            drawWire(leftX + (beakerW) / 2, wireY, rightX + (beakerW) / 2, wireY);
+
+            // Bulb
+            drawBulb(width / 2, wireY - 100);
+
+            // Labels
+            ctx.fillStyle = '#94a3b8'; ctx.font = 'bold 12px Inter'; ctx.textAlign = 'center';
+            ctx.fillText("ANODE (-)", leftX + beakerW / 2, beakerY + beakerH + 20);
+            ctx.fillText(METALS[ANODE].name, leftX + beakerW / 2, beakerY + beakerH + 35);
+
+            ctx.fillText("CATHODE (+)", rightX + beakerW / 2, beakerY + beakerH + 20);
+            ctx.fillText(METALS[CATHODE].name, rightX + beakerW / 2, beakerY + beakerH + 35);
+
+            // Lens
+            drawLensView();
+
+            requestAnimationFrame(loop);
+        }
+
+        // --- INPUTS ---
+
+        const lensEl = document.getElementById('lens-handle');
+
+        // Initial Lens pos
+        LENS.x = window.innerWidth / 2;
+        LENS.y = window.innerHeight / 2;
+
+        // Mouse Logic
+        let isDrag = false;
+
+        window.addEventListener('mousedown', (e) => {
+            const dx = e.clientX - LENS.x;
+            const dy = e.clientY - LENS.y;
+            if (Math.sqrt(dx * dx + dy * dy) < LENS.r + 20) {
+                isDrag = true;
+                LENS.active = true;
+                lensEl.style.display = 'none';
+            }
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (isDrag) {
+                LENS.x = e.clientX;
+                LENS.y = e.clientY;
+            }
+        });
+
+        window.addEventListener('mouseup', () => { isDrag = false; });
+
+        updateCell();
+        loop();
+
+    </script>
+</body>
+
+</html>

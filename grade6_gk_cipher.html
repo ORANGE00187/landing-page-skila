@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Enigma Cipher</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #111827;
+            font-family: 'Share Tech Mono', monospace;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 60%;
+        }
+
+        .ui {
+            height: 40%;
+            background: #1f2937;
+            padding: 20px;
+            color: #10b981;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            align-items: center;
+        }
+
+        input {
+            background: #000;
+            border: 1px solid #10b981;
+            color: #10b981;
+            padding: 10px;
+            font-size: 24px;
+            width: 80%;
+            text-transform: uppercase;
+            letter-spacing: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="ui">
+        <div>INPUT PLAIN TEXT</div>
+        <input type="text" id="plain" placeholder="TYPE HERE..." maxlength="12">
+        <div>OUTPUT CIPHER TEXT</div>
+        <div id="cipher" class="text-3xl font-bold tracking-[0.5em] h-10"></div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const inp = document.getElementById('plain');
+        const out = document.getElementById('cipher');
+
+        let width, height;
+        const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
+
+        let SHIFT = 0; // 0 to 25
+        let TARGET_SHIFT = 3;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight * 0.6;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Ring Controls
+        // Click and drag on canvas X axis to rotate
+        let DRAG = false; let LX = 0;
+        canvas.addEventListener('mousedown', e => { DRAG = true; LX = e.clientX; });
+        window.addEventListener('mouseup', () => {
+            DRAG = false;
+            // Snap
+            TARGET_SHIFT = Math.round(TARGET_SHIFT);
+        });
+        canvas.addEventListener('mousemove', e => {
+            if (DRAG) {
+                let dx = e.clientX - LX;
+                TARGET_SHIFT += dx * 0.05;
+                LX = e.clientX;
+            }
+        });
+
+        // Input Logic
+        inp.addEventListener('input', () => {
+            encrypt();
+        });
+
+        function encrypt() {
+            let txt = inp.value.toUpperCase();
+            let shift = Math.round(SHIFT) % 26;
+            if (shift < 0) shift += 26;
+
+            let res = "";
+            for (let c of txt) {
+                let idx = ALPHABET.indexOf(c);
+                if (idx > -1) {
+                    let nIdx = (idx + shift) % 26;
+                    res += ALPHABET[nIdx];
+                } else {
+                    res += c;
+                }
+            }
+            out.innerText = res;
+        }
+
+        function loop() {
+            // Smooth Shift
+            SHIFT += (TARGET_SHIFT - SHIFT) * 0.1;
+
+            ctx.fillStyle = '#111827';
+            ctx.fillRect(0, 0, width, height);
+
+            const cx = width / 2; const cy = height + 300; // Large rings at bottom
+            const R1 = 400; // Inner
+            const R2 = 350; // Outer (Rotatable)
+
+            // Draw Pointer
+            ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(cx, height - 100); ctx.lineTo(cx, height); ctx.stroke();
+
+            // Draw Outer Ring (Shifted)
+            drawRing(cx, cy, R2, SHIFT, '#10b981', true);
+
+            // Draw Inner Ring (Static)
+            drawRing(cx, cy, R1, 0, '#3b82f6', false);
+
+            // Connection Lines (Active Letter)
+            // If typing, visualize
+            if (inp.value.length > 0) {
+                // Get last char
+                let c = inp.value[inp.value.length - 1].toUpperCase();
+                let idx = ALPHABET.indexOf(c);
+                if (idx > -1) {
+                    // Angle in Inner Ring
+                    let a1 = -Math.PI / 2 - (idx * (Math.PI * 2 / 26)); // Top is 0 index?
+                    // No, need to align properly.
+
+                    // Let's assume Top Center is 'A' (Index 0)
+
+                    // Draw Line from Inner to Outer
+                    // Inner Angle
+                    let step = (Math.PI * 2) / 26;
+                    let ang1 = -Math.PI / 2 + (idx * step);
+
+                    // Outer Angle (Shifted)
+                    // Shift means Outer rotates relative to Inner
+                    // A maps to D (+3). Outer 'D' aligns with Inner 'A'.
+                    // So Outer Ring rotates -3 steps?
+                    // If Inner A is Top. Outer D needs to be Top. 
+                    // Outer D is index 3. Normally at +3*step. To be at Top (-PI/2), rotated -3*step.
+                    // So Rotation = -SHIFT * step.
+
+                    let shift = Math.round(SHIFT);
+                    let nIdx = (idx + shift) % 26;
+
+                    let ang2 = -Math.PI / 2 + (nIdx * step) - (SHIFT * step);
+                    // Visual line just connects vertically?
+                    // No, physically the letters align.
+                    // Inner 'A' at Top. Outer 'D' (if shift 3) is at Top.
+                    // So they are close.
+
+                    // Just highlight them
+                    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+                    ctx.beginPath(); ctx.moveTo(cx, cy);
+                    ctx.arc(cx, cy, R1 + 50, ang1 - 0.1, ang1 + 0.1);
+                    ctx.fill();
+                }
+            }
+
+            if (DRAG || Math.abs(TARGET_SHIFT - SHIFT) > 0.01) encrypt(); // Live update
+
+            requestAnimationFrame(loop);
+        }
+
+        function drawRing(cx, cy, r, shiftOffset, color, isOuter) {
+            ctx.save();
+            ctx.translate(cx, cy);
+            // Rotate ring
+            let step = (Math.PI * 2) / 26;
+            let rot = -shiftOffset * step;
+            ctx.rotate(rot);
+
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.font = '20px bold monospace';
+
+            for (let i = 0; i < 26; i++) {
+                let angle = -Math.PI / 2 + i * step; // A at top
+                // Account for global rotation
+
+                // Draw Letter
+                // Relative pos
+                let lx = Math.cos(angle) * r;
+                let ly = Math.sin(angle) * r;
+
+                // Rotate letter to be upright locally
+                ctx.save();
+                ctx.translate(lx, ly);
+                ctx.rotate(angle + Math.PI / 2);
+
+                ctx.fillStyle = color;
+                ctx.fillText(ALPHABET[i], 0, 0);
+
+                ctx.restore();
+            }
+
+            // Ring Circle
+            ctx.strokeStyle = color; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(0, 0, r + 15, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(0, 0, r - 15, 0, Math.PI * 2); ctx.stroke();
+
+            ctx.restore();
+        }
+        loop();
+
+    </script>
+</body>
+
+</html>

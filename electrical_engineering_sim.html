@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EEE: Three-Phase Phasor Engine</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@500;700&display=swap');
+
+        :root {
+            --bg: #0F172A;
+            --panel: rgba(15, 23, 42, 0.95);
+            --grid: rgba(56, 189, 248, 0.1);
+            --text: #94A3B8;
+            --phase-a: #EF4444;
+            /* Red */
+            --phase-b: #FACC15;
+            /* Yellow */
+            --phase-c: #3B82F6;
+            /* Blue */
+            --crt-glow: 0 0 10px;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: var(--bg);
+            font-family: 'Share Tech Mono', monospace;
+            color: var(--text);
+            user-select: none;
+        }
+
+        /* CRT Scanline Effect */
+        body::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+            z-index: 900;
+        }
+
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: grid;
+            grid-template-columns: 350px 1fr 350px;
+            grid-template-rows: 1fr 250px;
+            padding: 20px;
+            box-sizing: border-box;
+            gap: 20px;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+            pointer-events: auto;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Layout areas */
+        #radar-view {
+            grid-column: 1;
+            grid-row: 1;
+            border-color: var(--text);
+        }
+
+        #stator-view {
+            grid-column: 3;
+            grid-row: 1;
+            border-color: var(--text);
+        }
+
+        #scope-view {
+            grid-column: 1 / span 3;
+            grid-row: 2;
+            border-color: var(--text);
+        }
+
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 400px;
+            height: 100px;
+            pointer-events: auto;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #fff;
+            z-index: 800;
+        }
+
+        .panel-header {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 5px 10px;
+            font-size: 12px;
+            color: #fff;
+            text-transform: uppercase;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* Controls */
+        .knob-group {
+            text-align: center;
+        }
+
+        input[type=range] {
+            display: block;
+            margin: 5px 0;
+            width: 100px;
+        }
+
+        .toggle-btn {
+            padding: 5px 10px;
+            border: 1px solid #555;
+            background: #222;
+            color: #888;
+            cursor: pointer;
+            font-size: 10px;
+            margin: 2px;
+        }
+
+        .toggle-btn.on.a {
+            background: var(--phase-a);
+            color: #000;
+            box-shadow: 0 0 10px var(--phase-a);
+        }
+
+        .toggle-btn.on.b {
+            background: var(--phase-b);
+            color: #000;
+            box-shadow: 0 0 10px var(--phase-b);
+        }
+
+        .toggle-btn.on.c {
+            background: var(--phase-c);
+            color: #000;
+            box-shadow: 0 0 10px var(--phase-c);
+        }
+
+        #boot-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            color: var(--phase-c);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            font-size: 24px;
+            flex-direction: column;
+            transition: opacity 0.5s;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="boot-screen">
+        <div>SYSTEM STARTUP</div>
+        <div style="font-size:12px; margin-top:10px; color:#666;">SYNCHRONIZING PHASORS...</div>
+    </div>
+
+    <!-- UI STRUCTURE -->
+    <div id="ui-layer">
+        <div class="panel" id="radar-view">
+            <div class="panel-header"><span>Phasor Radar</span><span>[RAD]</span></div>
+        </div>
+
+        <!-- Controls in center top (floating) -->
+        <div id="controls">
+            <div class="knob-group">
+                <label>FREQ (Hz)</label>
+                <input type="range" id="freq-slider" min="0" max="100" value="50">
+                <span id="freq-val">50 Hz</span>
+            </div>
+            <div class="knob-group">
+                <label>PHASE LOCK</label>
+                <div>
+                    <button class="toggle-btn on a" onclick="togglePhase(0)">A</button>
+                    <button class="toggle-btn on b" onclick="togglePhase(1)">B</button>
+                    <button class="toggle-btn on c" onclick="togglePhase(2)">C</button>
+                </div>
+            </div>
+            <div class="knob-group">
+                <label>AMP (V)</label>
+                <input type="range" id="amp-slider" min="0" max="200" value="100">
+                <span id="amp-val">100 V</span>
+            </div>
+        </div>
+
+        <div class="panel" id="stator-view">
+            <div class="panel-header"><span>Stator Core</span><span>[RMF]</span></div>
+        </div>
+
+        <div class="panel" id="scope-view">
+            <div class="panel-header"><span>Oscilloscope</span><span>[OSC-3]</span></div>
+        </div>
+    </div>
+
+    <canvas id="main-canvas"></canvas>
+
+    <script>
+        /**
+         * =================================================================================
+         *  THE THREE-PHASE PHASOR ENGINE
+         *  (c) 2025 Deepmind Agentic Mode
+         *  
+         *  Simulates 3-Phase AC generation math from scratch.
+         * =================================================================================
+         */
+
+        // ---------------------------------------------------------------------------------
+        // MODULE 1: CONSTANTS & STATE
+        // ---------------------------------------------------------------------------------
+        const COLORS = {
+            A: '#EF4444',
+            B: '#FACC15',
+            C: '#3B82F6',
+            GRID: '#1e293b',
+            TEXT: '#94a3b8'
+        };
+
+        const STATE = {
+            freq: 5.0, // Visual frequency (not real Hz)
+            amp: 100,
+            phases: [true, true, true], // Active state
+            time: 0,
+            simSpeed: 0.02
+        };
+
+        // Ring Buffer for Oscilloscope
+        const BUFFER_SIZE = 1000;
+        const WAVE_HISTORY = {
+            A: new Float32Array(BUFFER_SIZE),
+            B: new Float32Array(BUFFER_SIZE),
+            C: new Float32Array(BUFFER_SIZE),
+            ptr: 0
+        };
+
+        // ---------------------------------------------------------------------------------
+        // MODULE 2: ENGINE CORE
+        // ---------------------------------------------------------------------------------
+        class Engine {
+            constructor() {
+                this.canvas = document.getElementById('main-canvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.resize();
+                window.addEventListener('resize', () => this.resize());
+            }
+
+            resize() {
+                this.width = this.canvas.width = window.innerWidth;
+                this.height = this.canvas.height = window.innerHeight;
+
+                // Layout Rects (Matching CSS Grid)
+                // Hardcoded to match visual centers of the panels
+                this.radarRect = { x: 0, y: 0, w: 390, h: this.height - 290 }; // Left Panelish
+                this.statorRect = { x: this.width - 390, y: 0, w: 390, h: this.height - 290 }; // Right Panelish
+                this.scopeRect = { x: 20, y: this.height - 250, w: this.width - 40, h: 230 }; // Bottom
+            }
+
+            update() {
+                STATE.time += STATE.freq * 0.005; // Advance time based on freq
+
+                // Calculate Instantaneous Voltages
+                // V = A * sin(wt + phi)
+                const t = STATE.time;
+                const amp = STATE.amp;
+
+                const valA = STATE.phases[0] ? amp * Math.sin(t) : 0;
+                const valB = STATE.phases[1] ? amp * Math.sin(t - (2 * Math.PI / 3)) : 0; // -120 deg
+                const valC = STATE.phases[2] ? amp * Math.sin(t - (4 * Math.PI / 3)) : 0; // -240 deg
+
+                // Update Ring Buffer
+                WAVE_HISTORY.A[WAVE_HISTORY.ptr] = valA;
+                WAVE_HISTORY.B[WAVE_HISTORY.ptr] = valB;
+                WAVE_HISTORY.C[WAVE_HISTORY.ptr] = valC;
+                WAVE_HISTORY.ptr = (WAVE_HISTORY.ptr + 1) % BUFFER_SIZE;
+
+                return { valA, valB, valC };
+            }
+
+            draw(vals) {
+                const ctx = this.ctx;
+                ctx.clearRect(0, 0, this.width, this.height);
+
+                this.drawRadar(vals);
+                this.drawStator(vals);
+                this.drawScope();
+            }
+
+            drawRadar(vals) {
+                // Determine Center of Radar Panel (Left Panel)
+                // Visual approximation based on CSS
+                const cx = 195; // 350px panel + padding
+                const cy = (this.height - 250) / 2;
+
+                const ctx = this.ctx;
+
+                // Grid
+                this.drawGrid(cx, cy, 150);
+
+                // Vectors
+                // A starts at 0 rad (Right) - actually in Phaser diagram usually 90deg is up.
+                // Let's standard: 0 rad = 3 o'clock. 
+                // Rotation is CCW.
+
+                const drawVector = (val, offsetRad, color, active) => {
+                    if (!active) return;
+
+                    // The vector rotates with time `t`
+                    // BUT in a phasor diagram, usually we rotate the whole frame or fix frame.
+                    // Let's visualize the ROTATING vectors that GENEREATE the sine wave.
+                    const angle = STATE.time + offsetRad;
+                    // Length is pure Amplitude (fixed), projected Y is the value.
+                    // Or visualize Instantaneous Value as length? 
+                    // Standard is: Vector length = Peak Amp, rotating. Projection on Y = Instant Value.
+
+                    const r = STATE.amp;
+                    const x = cx + Math.cos(angle) * r;
+                    const y = cy - Math.sin(angle) * r; // Canvas Y inverted
+
+                    ctx.beginPath();
+                    ctx.moveTo(cx, cy);
+                    ctx.lineTo(x, y);
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 3;
+                    ctx.shadowBlur = 10; ctx.shadowColor = color;
+                    ctx.stroke();
+
+                    // Arrowhead
+                    ctx.fillStyle = color;
+                    ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+
+                    // Ghost Line to Scope? (Hard because scope is bottom)
+                    // Let's just draw Projection Line to Y-Axis
+                    ctx.lineWidth = 1;
+                    ctx.setLineDash([2, 4]);
+                    // ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(cx + 200, y); ctx.stroke(); // Project right
+                    ctx.setLineDash([]);
+                    ctx.shadowBlur = 0;
+                };
+
+                drawVector(vals.valA, 0, COLORS.A, STATE.phases[0]);
+                drawVector(vals.valB, -2 * Math.PI / 3, COLORS.B, STATE.phases[1]);
+                drawVector(vals.valC, -4 * Math.PI / 3, COLORS.C, STATE.phases[2]);
+
+                // Origin
+                ctx.fillStyle = '#fff';
+                ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fill();
+            }
+
+            drawStator(vals) {
+                // Right Panel
+                const cx = this.width - 195;
+                const cy = (this.height - 250) / 2;
+                const r = 120;
+                const ctx = this.ctx;
+
+                // Stator Ring
+                ctx.strokeStyle = '#334155';
+                ctx.lineWidth = 10;
+                ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+
+                // Coils (3 Pairs)
+                // A: Top/Bottom (90 / 270)
+                // B: 120 deg shift (Phase B lags A by 120, so coil position physically rotated)
+                // Physical layout: A at 0, B at 120, C at 240? 
+                // Or A at 90. Let's place pairs.
+
+                const drawCoilPair = (angleRad, val, color, label) => {
+                    const mag = Math.abs(val) / 200; // Normalize glow
+                    const isPos = val > 0;
+
+                    const x1 = cx + Math.cos(angleRad) * r;
+                    const y1 = cy - Math.sin(angleRad) * r;
+                    const x2 = cx + Math.cos(angleRad + Math.PI) * r;
+                    const y2 = cy - Math.sin(angleRad + Math.PI) * r;
+
+                    // Coil 1 (Source)
+                    ctx.fillStyle = color;
+                    ctx.globalAlpha = 0.2 + mag * 0.8;
+                    ctx.shadowBlur = 10 + mag * 20; ctx.shadowColor = color;
+                    ctx.beginPath(); ctx.arc(x1, y1, 10, 0, Math.PI * 2); ctx.fill();
+
+                    // Coil 2 (Sink) - inverse brightness? No, current flows through both.
+                    ctx.beginPath(); ctx.arc(x2, y2, 10, 0, Math.PI * 2); ctx.fill();
+
+                    ctx.globalAlpha = 1.0; ctx.shadowBlur = 0;
+
+                    // Cross / Dot notation
+                    ctx.fillStyle = '#000';
+                    ctx.font = '10px monospace';
+                    ctx.fillText(isPos ? 'x' : '•', x1 - 3, y1 + 3);
+                    ctx.fillText(isPos ? '•' : 'x', x2 - 3, y2 + 3);
+                };
+
+                // Physical Position of coils
+                drawCoilPair(Math.PI / 2, vals.valA, COLORS.A, 'A'); // A Top
+                drawCoilPair(Math.PI / 2 - (2 * Math.PI / 3), vals.valB, COLORS.B, 'B'); // B at -120 physical
+                drawCoilPair(Math.PI / 2 - (4 * Math.PI / 3), vals.valC, COLORS.C, 'C'); // C at -240 physical
+
+                // RMF (Resultant Magnetic Field) Visualization
+                // Sum the flux vectors from each coil interactively
+                // Flux vector A points along A axis with magnitude valA
+
+                let rmfX = 0;
+                let rmfY = 0;
+
+                const addFlux = (val, angleRad) => {
+                    // Vector along coil axis
+                    const fx = Math.cos(angleRad) * val;
+                    const fy = -Math.sin(angleRad) * val; // Canvas Y flip
+                    rmfX += fx;
+                    rmfY += fy;
+                };
+
+                if (STATE.phases[0]) addFlux(vals.valA, Math.PI / 2);
+                if (STATE.phases[1]) addFlux(vals.valB, Math.PI / 2 - 2 * Math.PI / 3);
+                if (STATE.phases[2]) addFlux(vals.valC, Math.PI / 2 - 4 * Math.PI / 3);
+
+                // Draw RMF Vector
+                ctx.beginPath();
+                ctx.moveTo(cx, cy);
+                ctx.lineTo(cx + rmfX, cy + rmfY);
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 4;
+                ctx.shadowBlur = 15; ctx.shadowColor = '#fff';
+                ctx.stroke();
+
+                // Arrowhead
+                ctx.beginPath(); ctx.arc(cx + rmfX, cy + rmfY, 5, 0, Math.PI * 2); ctx.fillStyle = "#fff"; ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+
+            drawScope() {
+                const ctx = this.ctx;
+                const rect = this.scopeRect;
+                const ch = rect.h;
+                const cw = rect.w;
+                const cy = rect.y + ch / 2;
+
+                // Background
+                // ctx.fillStyle = '#000'; ctx.fillRect(rect.x, rect.y, cw, ch);
+
+                // Grid
+                ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+                ctx.beginPath();
+                ctx.moveTo(rect.x, cy); ctx.lineTo(rect.x + cw, cy); // Center line
+                ctx.stroke();
+
+                // Draw 3 Waves from Ring Buffer
+                const drawWave = (buffer, color) => {
+                    ctx.beginPath();
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 2;
+                    ctx.shadowBlur = 5; ctx.shadowColor = color;
+
+                    let first = true;
+                    // Scan from oldest (ptr) to newest (ptr-1)
+                    // buffer size 1000. width e.g., 1000. 1 px per sample.
+                    const step = cw / BUFFER_SIZE;
+
+                    for (let i = 0; i < BUFFER_SIZE; i++) {
+                        const idx = (WAVE_HISTORY.ptr + i) % BUFFER_SIZE;
+                        const val = buffer[idx];
+                        const x = rect.x + i * step;
+                        const y = cy - val * 0.5; // Scale down fit
+
+                        if (first) { ctx.moveTo(x, y); first = false; }
+                        else ctx.lineTo(x, y);
+                    }
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+                };
+
+                if (STATE.phases[0]) drawWave(WAVE_HISTORY.A, COLORS.A);
+                if (STATE.phases[1]) drawWave(WAVE_HISTORY.B, COLORS.B);
+                if (STATE.phases[2]) drawWave(WAVE_HISTORY.C, COLORS.C);
+
+                // Scanline
+                ctx.strokeStyle = '#fff';
+                ctx.beginPath(); ctx.moveTo(rect.x + cw, rect.y); ctx.lineTo(rect.x + cw, rect.y + ch); ctx.stroke();
+            }
+
+            drawGrid(cx, cy, r) {
+                const ctx = this.ctx;
+                ctx.strokeStyle = COLORS.GRID;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(cx, cy, r, 0, Math.PI * 2);
+                ctx.arc(cx, cy, r * 0.66, 0, Math.PI * 2);
+                ctx.arc(cx, cy, r * 0.33, 0, Math.PI * 2);
+
+                ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy);
+                ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r);
+                ctx.stroke();
+            }
+        }
+
+        // ---------------------------------------------------------------------------------
+        // CONTROLLER
+        // ---------------------------------------------------------------------------------
+        const engine = new Engine();
+
+        function loop() {
+            const vals = engine.update();
+            engine.draw(vals);
+            requestAnimationFrame(loop);
+
+            // Boot fade
+            if (document.getElementById('boot-screen')) {
+                const bs = document.getElementById('boot-screen');
+                bs.style.opacity = 0;
+                if (bs.style.opacity == '0') setTimeout(() => bs.remove(), 500);
+            }
+        }
+
+        // UI Binds
+        document.getElementById('freq-slider').oninput = (e) => {
+            STATE.freq = parseFloat(e.target.value);
+            document.getElementById('freq-val').innerText = STATE.freq + " Hz";
+        };
+        document.getElementById('amp-slider').oninput = (e) => {
+            STATE.amp = parseFloat(e.target.value);
+            document.getElementById('amp-val').innerText = STATE.amp + " V";
+        };
+
+        window.togglePhase = (idx) => {
+            STATE.phases[idx] = !STATE.phases[idx];
+            const btns = document.querySelectorAll('.toggle-btn');
+            if (STATE.phases[idx]) btns[idx].classList.add('on');
+            else btns[idx].classList.remove('on');
+        };
+
+        loop();
+
+    </script>
+</body>
+
+</html>

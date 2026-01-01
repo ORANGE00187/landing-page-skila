@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skila.ai | Orbital Dynamics</title>
+    <!-- FONTS -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #020617;
+            /* Void */
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+            color: white;
+        }
+
+        #sim-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* UI */
+        .ui-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        /* HUD */
+        .telemetry-panel {
+            position: absolute;
+            top: 40px;
+            left: 40px;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            width: 250px;
+            pointer-events: auto;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            font-size: 12px;
+            color: #94A3B8;
+        }
+
+        .metric-val {
+            font-family: 'JetBrains Mono';
+            color: white;
+            font-weight: 700;
+        }
+
+        .hint-text {
+            position: absolute;
+            bottom: 40px;
+            width: 100%;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="sim-canvas"></canvas>
+
+    <div class="ui-layer">
+        <div class="telemetry-panel">
+            <div class="text-xs text-sky-500 font-bold mb-4 uppercase tracking-widest">
+                <i class="fas fa-satellite-dish mr-2"></i>Mission Control
+            </div>
+
+            <div class="metric">
+                <span>Active Bodies</span>
+                <span class="metric-val" id="count-val">0</span>
+            </div>
+            <div class="metric">
+                <span>System Energy</span>
+                <span class="metric-val text-yellow-500" id="energy-val">0.00 MJ</span>
+            </div>
+            <div class="metric">
+                <span>Time Scale</span>
+                <span class="metric-val text-purple-400">1.0x</span>
+            </div>
+        </div>
+
+        <div class="hint-text">
+            Drag to Launch • Scroll for Mass • Right Click for Singularity
+        </div>
+    </div>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        /**
+         * SKILA.ai - Orbital Mechanics Simulation
+         * - N-Body Gravity Engine (Verlet-ish)
+         * - Spacetime Grid Warp
+         * - Trajectory Prediction
+         */
+
+        const canvas = document.getElementById('sim-canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+
+        // --- PHYSICS VARS ---
+        const G = 0.5; // Gravitational Constant
+        const BODIES = [];
+
+        // Grid
+        const GRID_SIZE = 60;
+        const GRID_POINTS = [];
+        let rows, cols;
+
+        // Interaction
+        let dragStart = null;
+        let dragCurrent = null;
+        let newMass = 10;
+        let isBlackHole = false;
+
+        class Body {
+            constructor(x, y, vx, vy, m) {
+                this.x = x; this.y = y;
+                this.vx = vx; this.vy = vy;
+                this.m = m;
+                // Radius ~ sqrt(m)
+                this.r = Math.sqrt(m) * 2;
+                if (m > 1000) this.r = 15; // Black hole small? No, massive star
+
+                // Color based on Mass
+                if (m > 500) this.col = '#F59E0B'; // Star
+                else if (m > 50) this.col = '#0EA5E9'; // Gas Giant
+                else this.col = '#EC4899'; // Rocky
+
+                this.trail = [];
+            }
+
+            update() {
+                // Gravity
+                for (let other of BODIES) {
+                    if (other === this) continue;
+                    const dx = other.x - this.x;
+                    const dy = other.y - this.y;
+                    const dSq = dx * dx + dy * dy;
+                    const d = Math.sqrt(dSq);
+
+                    if (d < this.r + other.r) {
+                        // Collision handled in main loop (merge)
+                        continue;
+                    }
+
+                    // F = G * m1 * m2 / r^2
+                    const f = (G * this.m * other.m) / dSq;
+                    const fx = f * (dx / d);
+                    const fy = f * (dy / d);
+
+                    this.vx += fx / this.m;
+                    this.vy += fy / this.m;
+                }
+
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Trail
+                if (this.trail.length > 50) this.trail.shift();
+                if (Math.random() > 0.5) this.trail.push({ x: this.x, y: this.y });
+            }
+
+            draw(ctx) {
+                // Trail
+                ctx.beginPath();
+                for (let i = 0; i < this.trail.length; i++) {
+                    const t = this.trail[i];
+                    if (i === 0) ctx.moveTo(t.x, t.y);
+                    else ctx.lineTo(t.x, t.y);
+                }
+                ctx.strokeStyle = this.col;
+                ctx.lineWidth = 1;
+                ctx.globalAlpha = 0.4;
+                ctx.stroke();
+                ctx.globalAlpha = 1.0;
+
+                // Body
+                ctx.fillStyle = this.col;
+                // Bloom
+                ctx.shadowColor = this.col; ctx.shadowBlur = this.m > 100 ? 50 : 10;
+
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        // --- GRID SYSTEM ---
+        function initGrid() {
+            GRID_POINTS.length = 0;
+            cols = Math.ceil(width / GRID_SIZE) + 2;
+            rows = Math.ceil(height / GRID_SIZE) + 2;
+
+            for (let y = 0; y < rows; y++) {
+                for (let x = 0; x < cols; x++) {
+                    GRID_POINTS.push({
+                        ox: (x - 1) * GRID_SIZE, // Original X
+                        oy: (y - 1) * GRID_SIZE, // Original Y
+                        x: 0, y: 0
+                    });
+                }
+            }
+        }
+
+        function updateGrid() {
+            // Grid warping:
+            // For each point, calculate displacement sum from all bodies
+            // D = sum( vec_to_body / dist^2 ) * factor
+
+            for (let p of GRID_POINTS) {
+                let dx = 0, dy = 0;
+
+                for (let b of BODIES) {
+                    const distX = b.x - p.ox;
+                    const distY = b.y - p.oy;
+                    const dSq = distX * distX + distY * distY;
+                    const d = Math.sqrt(dSq);
+
+                    // Simple warp function
+                    // Pull grid towards massive body
+                    // intensity ~ Mass / distance
+                    const factor = (b.m * 10) / (d + 100);
+                    // Limit
+                    // Direction
+                    dx += (distX / d) * factor;
+                    dy += (distY / d) * factor;
+                }
+
+                p.x = p.ox + dx;
+                p.y = p.oy + dy;
+            }
+        }
+
+        function drawGridLines() {
+            ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+            ctx.lineWidth = 1;
+
+            // Draw horizontal lines
+            for (let y = 0; y < rows; y++) {
+                ctx.beginPath();
+                for (let x = 0; x < cols; x++) {
+                    const idx = y * cols + x;
+                    const p = GRID_POINTS[idx];
+                    if (x === 0) ctx.moveTo(p.x, p.y);
+                    else ctx.lineTo(p.x, p.y);
+                }
+                ctx.stroke();
+            }
+
+            // Vertical
+            for (let x = 0; x < cols; x++) {
+                ctx.beginPath();
+                for (let y = 0; y < rows; y++) {
+                    const idx = y * cols + x;
+                    const p = GRID_POINTS[idx];
+                    if (y === 0) ctx.moveTo(p.x, p.y);
+                    else ctx.lineTo(p.x, p.y);
+                }
+                ctx.stroke();
+            }
+        }
+
+        // --- PREDICTION ---
+        function drawPrediction() {
+            if (!dragStart || !dragCurrent) return;
+
+            // Calculate launch velocity
+            const launchVx = (dragStart.x - dragCurrent.x) * 0.05;
+            const launchVy = (dragStart.y - dragCurrent.y) * 0.05;
+
+            // Clone state for simulation
+            // We only simulate the new body's path relative to existing bodies (assuming they are static for simplicity? No, full n-body prediction is expensive but accurate)
+            // Let's assume existing bodies stay fixed for the prediction line for performance/clarity, or move them too?
+            // Static prediction is okay for "Relative to sun" usually
+            // But let's try a light simulation
+
+            let ghostX = dragStart.x;
+            let ghostY = dragStart.y;
+            let ghostVx = launchVx;
+            let ghostVy = launchVy;
+
+            ctx.beginPath();
+            ctx.moveTo(ghostX, ghostY);
+
+            // 60 steps prediction
+            for (let i = 0; i < 100; i++) {
+                // Calc acceleration from current BODIES
+                let ax = 0, ay = 0;
+                for (let b of BODIES) {
+                    const dx = b.x - ghostX;
+                    const dy = b.y - ghostY;
+                    const dSq = dx * dx + dy * dy;
+                    if (dSq < 100) continue;
+                    const d = Math.sqrt(dSq);
+                    const f = (G * b.m) / dSq; // Mass 1 is ghost (canceled out in a=F/m)
+
+                    ax += f * (dx / d);
+                    ay += f * (dy / d);
+                }
+                ghostVx += ax;
+                ghostVy += ay;
+                ghostX += ghostVx;
+                ghostY += ghostVy;
+
+                if (i % 2 === 0) ctx.lineTo(ghostX, ghostY);
+            }
+
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.setLineDash([4, 4]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw Launch Vector
+            ctx.beginPath();
+            ctx.moveTo(dragStart.x, dragStart.y);
+            ctx.lineTo(dragCurrent.x, dragCurrent.y);
+            ctx.strokeStyle = '#F472B6';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+
+        // --- LOOP ---
+        function loop() {
+            // 1. Grid
+            updateGrid();
+
+            // 2. Physics
+            if (isBlackHole) {
+                // Spawn a temp massive invisible attractor at mouse
+                const mx = dragCurrent ? dragCurrent.x : 0;
+                const my = dragCurrent ? dragCurrent.y : 0;
+                // Actually need to find where mouse is...
+                // Handled in inputs
+            }
+
+            // Integrator
+            BODIES.forEach(b => b.update());
+
+            // Collision Detection (Merge)
+            for (let i = 0; i < BODIES.length; i++) {
+                for (let j = i + 1; j < BODIES.length; j++) {
+                    const b1 = BODIES[i];
+                    const b2 = BODIES[j];
+                    const dx = b1.x - b2.x;
+                    const dy = b1.y - b2.y;
+                    const d = Math.sqrt(dx * dx + dy * dy);
+
+                    if (d < b1.r + b2.r) {
+                        // Merge into b1
+                        const totalM = b1.m + b2.m;
+                        b1.vx = (b1.vx * b1.m + b2.vx * b2.m) / totalM;
+                        b1.vy = (b1.vy * b1.m + b2.vy * b2.m) / totalM;
+                        b1.x = (b1.x * b1.m + b2.x * b2.m) / totalM;
+                        b1.y = (b1.y * b1.m + b2.y * b2.m) / totalM;
+                        b1.m = totalM;
+                        b1.r = Math.sqrt(totalM) * 2;
+
+                        // Remove b2
+                        BODIES.splice(j, 1);
+                        j--;
+                    }
+                }
+            }
+
+            // Draw
+            ctx.fillStyle = '#020617';
+            ctx.fillRect(0, 0, width, height);
+
+            drawGridLines();
+
+            BODIES.forEach(b => b.draw(ctx));
+
+            drawPrediction();
+
+            // UI
+            document.getElementById('count-val').innerText = BODIES.length;
+
+            // Check Blackhole
+            if (isBlackHole && dragCurrent) {
+                ctx.beginPath();
+                ctx.arc(dragCurrent.x, dragCurrent.y, 20, 0, Math.PI * 2);
+                ctx.fillStyle = 'black'; ctx.stroke();
+                ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.stroke();
+
+                // Pull everything hard
+                for (let b of BODIES) {
+                    const dx = dragCurrent.x - b.x;
+                    const dy = dragCurrent.y - b.y;
+                    const d = Math.sqrt(dx * dx + dy * dy);
+                    if (d > 10) {
+                        b.vx += (dx / d) * 2; // Strong pull
+                        b.vy += (dy / d) * 2;
+                    } else {
+                        b.x = -1000; // Kill
+                    }
+                }
+            }
+
+            requestAnimationFrame(loop);
+        }
+
+        // --- INPUTS ---
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            initGrid();
+        }
+        window.addEventListener('resize', resize);
+
+        canvas.addEventListener('mousedown', e => {
+            if (e.button === 2) {
+                isBlackHole = true;
+                dragCurrent = { x: e.clientX, y: e.clientY };
+            } else {
+                dragStart = { x: e.clientX, y: e.clientY };
+                dragCurrent = { x: e.clientX, y: e.clientY };
+            }
+        });
+
+        window.addEventListener('mousemove', e => {
+            dragCurrent = { x: e.clientX, y: e.clientY };
+        });
+
+        window.addEventListener('mouseup', e => {
+            if (isBlackHole) {
+                isBlackHole = false;
+                dragCurrent = null;
+            } else if (dragStart) {
+                // Launch
+                const vx = (dragStart.x - e.clientX) * 0.05;
+                const vy = (dragStart.y - e.clientY) * 0.05;
+                BODIES.push(new Body(dragStart.x, dragStart.y, vx, vy, newMass));
+                dragStart = null;
+                dragCurrent = null;
+            }
+        });
+
+        window.addEventListener('wheel', e => {
+            if (dragStart) {
+                newMass += e.deltaY * -0.1;
+                if (newMass < 1) newMass = 1;
+                if (newMass > 200) newMass = 200;
+            }
+        });
+
+        canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+        // Init: Solar System
+        resize();
+        // Sun
+        BODIES.push(new Body(width / 2, height / 2, 0, 0, 800));
+        // Earthish
+        BODIES.push(new Body(width / 2 + 300, height / 2, 0, 1.2, 30));
+
+        loop();
+
+    </script>
+</body>
+
+</html>

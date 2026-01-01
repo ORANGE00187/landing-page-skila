@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Solar System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Space Mono', monospace;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: move;
+        }
+
+        .hud {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: #4ade80;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+    <div class="hud">
+        <h1 class="text-2xl font-bold">Orbital Mechanics</h1>
+        <p>Scroll to Zoom. Drag to Pan.</p>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+        let SCALE = 1;
+        let OFFSET = { x: 0, y: 0 };
+
+        // Planet Data (Relative distances/periods scaled)
+        const PLANETS = [
+            { name: "Mercury", r: 4, dist: 60, speed: 0.04, color: '#94a3b8' },
+            { name: "Venus", r: 8, dist: 90, speed: 0.015, color: '#facc15' },
+            { name: "Earth", r: 8.5, dist: 130, speed: 0.01, color: '#3b82f6' },
+            { name: "Mars", r: 6, dist: 170, speed: 0.005, color: '#ef4444' },
+            { name: "Jupiter", r: 25, dist: 280, speed: 0.002, color: '#d97706' },
+            { name: "Saturn", r: 20, dist: 380, speed: 0.0009, color: '#fde047', ring: true },
+            { name: "Uranus", r: 12, dist: 460, speed: 0.0006, color: '#22d3ee' },
+            { name: "Neptune", r: 11, dist: 520, speed: 0.0003, color: '#1d4ed8' }
+        ];
+
+        let TIME = 0;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            OFFSET.x = width / 2; OFFSET.y = height / 2;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Zoom/Pan
+        canvas.addEventListener('wheel', e => {
+            const d = e.deltaY > 0 ? 0.9 : 1.1;
+            SCALE *= d;
+        });
+
+        let DRAG = false;
+        canvas.addEventListener('mousedown', () => DRAG = true);
+        window.addEventListener('mouseup', () => DRAG = false);
+        window.addEventListener('mousemove', e => {
+            if (DRAG) { OFFSET.x += e.movementX; OFFSET.y += e.movementY; }
+        });
+
+        function loop() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, width, height);
+
+            // Stars
+            ctx.fillStyle = '#fff';
+
+            ctx.save();
+            ctx.translate(OFFSET.x, OFFSET.y);
+            ctx.scale(SCALE, SCALE);
+
+            // Sun
+            ctx.fillStyle = '#fbbf24';
+            ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 50;
+            ctx.beginPath(); ctx.arc(0, 0, 30, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // Planets
+            PLANETS.forEach(p => {
+                const angle = TIME * p.speed;
+                const x = Math.cos(angle) * p.dist;
+                const y = Math.sin(angle) * p.dist;
+
+                // Orbit Track
+                ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.arc(0, 0, p.dist, 0, Math.PI * 2); ctx.stroke();
+
+                // Planet
+                ctx.fillStyle = p.color;
+                ctx.beginPath(); ctx.arc(x, y, p.r, 0, Math.PI * 2); ctx.fill();
+
+                // Ring (Saturn)
+                if (p.ring) {
+                    ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 4;
+                    ctx.beginPath(); ctx.ellipse(x, y, p.r * 2, p.r * 0.5, 0.5, 0, Math.PI * 2); ctx.stroke();
+                }
+
+                // Label (if zoomed in)
+                if (SCALE > 0.8) {
+                    ctx.fillStyle = 'white'; ctx.font = '10px monospace';
+                    ctx.fillText(p.name, x, y - p.r - 5);
+                }
+            });
+
+            ctx.restore();
+
+            TIME += 1;
+            requestAnimationFrame(loop);
+        }
+        loop();
+
+    </script>
+</body>
+
+</html>

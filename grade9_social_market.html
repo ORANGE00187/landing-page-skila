@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Market Equilibrium</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@300;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #0f172a;
+            font-family: 'Roboto Mono', monospace;
+            color: white;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .panel {
+            position: absolute;
+            top: 50%;
+            right: 20px;
+            transform: translateY(-50%);
+            width: 300px;
+            padding: 20px;
+            background: rgba(30, 41, 59, 0.9);
+            border: 1px solid #475569;
+            border-radius: 10px;
+        }
+
+        h2 {
+            border-bottom: 2px solid #555;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            font-size: 14px;
+        }
+
+        .slider-row {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-size: 12px;
+            color: #94a3b8;
+            margin-bottom: 5px;
+        }
+
+        input[type=range] {
+            width: 100%;
+            accent-color: #3b82f6;
+        }
+
+        .stats {
+            margin-top: 30px;
+            font-size: 14px;
+        }
+
+        .stat-l {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+
+        .val {
+            font-weight: bold;
+        }
+
+        .legend {
+            display: flex;
+            gap: 10px;
+            font-size: 10px;
+            margin-top: 20px;
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="panel">
+        <h2>Market Forces</h2>
+
+        <div class="slider-row">
+            <label style="color:#ef4444">SUPPLY SHIFT (Production cost)</label>
+            <input type="range" id="supply" min="-50" max="50" value="0">
+        </div>
+
+        <div class="slider-row">
+            <label style="color:#3b82f6">DEMAND SHIFT (Consumer income)</label>
+            <input type="range" id="demand" min="-50" max="50" value="0">
+        </div>
+
+        <div class="stats">
+            <div class="stat-l"><span>Eq. Price (P*):</span> <span class="val" id="eq-p">$0.00</span></div>
+            <div class="stat-l"><span>Eq. Qty (Q*):</span> <span class="val" id="eq-q">0 Units</span></div>
+        </div>
+
+        <div class="legend">
+            <div><span class="dot" style="background:#ef4444"></span>Sellers</div>
+            <div><span class="dot" style="background:#3b82f6"></span>Buyers</div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const eqP = document.getElementById('eq-p');
+        const eqQ = document.getElementById('eq-q');
+
+        let width, height;
+
+        // Model
+        // Curves defined as Linear for simplicity: P = mQ + c
+        // Demand: P = -mQ + c1 (Negative slope)
+        // Supply: P = mQ + c2 (Positive slope)
+
+        let shiftS = 0; // Supply Shift
+        let shiftD = 0; // Demand Shift
+
+        // Sim Agents
+        let AGENTS = [];
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            initAgents();
+        }
+        window.addEventListener('resize', resize);
+
+        document.getElementById('supply').addEventListener('input', e => shiftS = parseInt(e.target.value));
+        document.getElementById('demand').addEventListener('input', e => shiftD = parseInt(e.target.value));
+
+        function initAgents() {
+            AGENTS = [];
+            for (let i = 0; i < 100; i++) {
+                AGENTS.push({
+                    type: Math.random() > 0.5 ? 'buyer' : 'seller',
+                    x: Math.random() * width / 2,
+                    y: height - 50 - Math.random() * 200,
+                    vx: (Math.random() - 0.5), vy: (Math.random() - 0.5)
+                });
+            }
+        }
+
+        function solveEq(sC, dC) {
+            // Supply: P = 1*Q + sC (Slope 1)
+            // Demand: P = -1*Q + dC (Slope -1)
+            // 1Q + sC = -1Q + dC
+            // 2Q = dC - sC
+            // Q = (dC - sC) / 2
+            // P = Q + sC
+
+            let Q = (dC - sC) / 2;
+            let P = Q + sC;
+            return { P, Q };
+        }
+
+        function loop() {
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, width, height);
+
+            // Graph Area
+            const gX = 100; const gY = 100;
+            const gW = width * 0.6; const gH = height * 0.6;
+            const originY = gY + gH;
+
+            // Draw Axes
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(gX, gY); ctx.lineTo(gX, originY); ctx.lineTo(gX + gW, originY);
+            ctx.stroke();
+
+            // Labels
+            ctx.fillStyle = '#fff'; ctx.font = '16px monospace';
+            ctx.fillText("PRICE (P)", gX - 40, gY);
+            ctx.fillText("QUANTITY (Q)", gX + gW - 20, originY + 20);
+
+            // Logic
+            // Base Lines: 
+            // Supply intercepts Y at 200, slope 1
+            // Demand intercepts Y at 600, slope -1
+
+            // Shifts apply to Intercept?
+            // Supply shift Right = Cheaper = Lower Intercept?
+            // "Increase Supply" means Curve moves Right. (Quantity increases for same Price).
+            // P = Q + C. Q = P - C.
+            // If shiftS increases, C should decrease?
+            // Let's simplified visual shift logic.
+
+            const baseX_S = 0; const baseY_S = originY - 100 + shiftS * 2; // Up/Down shift for simplicity
+            // Supply: Upward
+            // Demand: Downward
+
+            // Coordinates: (0,0) is (gX, originY).
+            // P = Y axis (Up). Q = X axis (Right).
+
+            // Supply Curve (Red)
+            // Visual Shift: shiftS > 0 (More supply) -> Curve moves Right (or Down visually).
+            // Let's map shiftS to -px Y intercept.
+            const sInt = 100 - shiftS * 3;
+            const dInt = 500 + shiftD * 3;
+
+            const { P, Q } = solveEq(sInt, dInt);
+
+            // Render
+            // Supply: P = Q + sInt
+            // Pt 1: Q=0, P=sInt. Pt 2: Q=gW, P=gW+sInt
+
+            function map(q, p) {
+                return { x: gX + q, y: originY - p };
+            }
+
+            // Draw Supply
+            const s1 = map(0, sInt);
+            const s2 = map(gW, gW + sInt);
+            ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y); ctx.stroke();
+            ctx.fillStyle = '#ef4444'; ctx.fillText("SUPPLY", s2.x + 10, s2.y);
+
+            // Draw Demand
+            // P = -Q + dInt
+            const d1 = map(0, dInt);
+            const d2 = map(gW, -gW + dInt);
+            ctx.strokeStyle = '#3b82f6';
+            ctx.beginPath(); ctx.moveTo(d1.x, d1.y); ctx.lineTo(d2.x, d2.y); ctx.stroke();
+            ctx.fillStyle = '#3b82f6'; ctx.fillText("DEMAND", d1.x, d1.y - 10);
+
+            // Equilibrium Point
+            if (Q > 0 && Q < gW && P > 0 && P < gH) {
+                const eq = map(Q, P);
+                ctx.fillStyle = '#fff';
+                ctx.beginPath(); ctx.arc(eq.x, eq.y, 8, 0, Math.PI * 2); ctx.fill();
+
+                // Dotted Lines
+                ctx.setLineDash([5, 5]); ctx.strokeStyle = '#aaa'; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(gX, eq.y); ctx.lineTo(eq.x, eq.y); ctx.lineTo(eq.x, originY); ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Update UI
+                eqP.innerText = "$" + P.toFixed(2);
+                eqQ.innerText = Math.floor(Q) + " Units";
+
+                // Move Agents (The "Floor" visualization)
+                // If P is high approx, Supply > Demand?
+                // Actually EQ represents cleared market.
+                // Visual Effect:
+                // Floor is under graph.
+                const floorY = originY + 50;
+                ctx.fillStyle = '#1e293b'; ctx.fillRect(gX, floorY, gW, 100);
+
+                // Agents swarm based on Q
+                // Higher Q = More activity
+                const activity = Math.min(100, Q / 5);
+
+                AGENTS.forEach((a, i) => {
+                    // Update
+                    a.x += a.vx; a.y += a.vy;
+                    // Constrain to box
+                    if (a.x < gX) a.vx = Math.abs(a.vx);
+                    if (a.x > gX + gW) a.vx = -Math.abs(a.vx);
+                    if (a.y < floorY) a.vy = Math.abs(a.vy);
+                    if (a.y > floorY + 100) a.vy = -Math.abs(a.vy);
+
+                    // Draw only if active (i < activity)
+                    if (i < activity) {
+                        ctx.fillStyle = a.type === 'buyer' ? '#3b82f6' : '#ef4444';
+                        ctx.beginPath(); ctx.arc(a.x, a.y, 4, 0, Math.PI * 2); ctx.fill();
+                    }
+                });
+            } else {
+                ctx.fillStyle = 'red';
+                ctx.fillText("MARKET COLLAPSE", width / 2, height / 2);
+            }
+
+            requestAnimationFrame(loop);
+        }
+
+        resize();
+        loop();
+
+    </script>
+</body>
+
+</html>

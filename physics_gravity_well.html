@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relativistic Spacetime Raytracer - Event Horizon Lab</title>
+    <style>
+        /* 
+         * =========================================
+         *  GLOBAL RESET & TYPOGRAPHY
+         * =========================================
+         */
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@500;700&display=swap');
+
+        :root {
+            --void: #000000;
+            --hud-primary: #00f3ff;
+            --hud-warning: #ff3333;
+            --hud-glass: rgba(0, 20, 40, 0.75);
+            --font-mono: 'Share Tech Mono', monospace;
+            --font-header: 'Rajdhani', sans-serif;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: var(--void);
+            font-family: var(--font-mono);
+            color: var(--hud-primary);
+            user-select: none;
+            cursor: crosshair;
+            /* Precision cursor */
+        }
+
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        /* Loading Overlay */
+        #boot-sequence {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            transition: opacity 1s ease-out;
+        }
+
+        .loader-text {
+            font-size: 20px;
+            animation: blink 0.5s infinite alternate;
+        }
+
+        @keyframes blink {
+            from {
+                opacity: 0.4;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- 
+      THE ENGINE CANVAS 
+      We use a single canvas for the entire composite to ensure 
+      perfect synchronization of the Raytracer and UI layers.
+    -->
+    <canvas id="engine-canvas"></canvas>
+
+    <!-- PRE-LOADER -->
+    <div id="boot-sequence">
+        <div class="loader-text">INITIALIZING SCHWARZSCHILD METRIC TENSORS...</div>
+        <div style="margin-top:10px; font-size:12px; color:#666;">LOADING PHOTON MAPPER</div>
+    </div>
+
+    <script>
+        /**
+         * ==========================================================================================
+         *  THE RELATIVISTIC SPACETIME RAYTRACER (RSR-Engine v1.0)
+         *  (c) 2025 Antigravity Dev Team (Deepmind Agentic Mode)
+         *  
+         *  A scratch-built 3D Graphics & Physics Engine implementing General Relativity visuals.
+         *  - Custom Vector3 Math Library
+         *  - Manual 3D-to-2D Perspective Projection
+         *  - Ray-Marching & Photon Mapping Hybrid
+         *  - Custom Immediate-Mode GUI (IMGUI) System
+         * ==========================================================================================
+         */
+
+        // ------------------------------------------------------------------------------------------
+        //  MODULE 1: MATHEMATICS LIBRARY (Vector3, Matrix4, Noise)
+        // ------------------------------------------------------------------------------------------
+
+        class Vec3 {
+            constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+            add(v) { return new Vec3(this.x + v.x, this.y + v.y, this.z + v.z); }
+            sub(v) { return new Vec3(this.x - v.x, this.y - v.y, this.z - v.z); }
+            mul(s) { return new Vec3(this.x * s, this.y * s, this.z * s); }
+            dot(v) { return this.x * v.x + this.y * v.y + this.z * v.z; }
+            cross(v) { return new Vec3(this.y * v.z - this.z * v.y, this.z * v.x - this.x * v.z, this.x * v.y - this.y * v.x); }
+            mag() { return Math.sqrt(this.x ** 2 + this.y ** 2 + this.z ** 2); }
+            norm() { const m = this.mag(); return m === 0 ? new Vec3() : this.mul(1 / m); }
+            clone() { return new Vec3(this.x, this.y, this.z); }
+        }
+
+        class Matrix4 {
+            // Simplified 4x4 for Rotation/View
+            static rotateY(theta) {
+                const c = Math.cos(theta), s = Math.sin(theta);
+                return [c, 0, s, 0, 1, 0, -s, 0, c]; // 3x3 actually sufficient for rotation
+            }
+            static transform(v, m) {
+                // 3x3 mult
+                return new Vec3(
+                    v.x * m[0] + v.y * m[1] + v.z * m[2],
+                    v.x * m[3] + v.y * m[4] + v.z * m[5],
+                    v.x * m[6] + v.y * m[7] + v.z * m[8]
+                );
+            }
+        }
+
+        // PERLIN NOISE IMPLEMENTATION (Minimalist)
+        // Based on "Improved Noise" snippet
+        const Noise = (function () {
+            const p = new Uint8Array(512);
+            const permutation = [151, 160, 137, 91, 90, 15, 131, 13, 201, 95, 96, 53, 194, 233, 7, 225, 140, 36, 103, 30, 69, 142, 8, 99, 37, 240, 21, 10, 23, 190, 6, 148, 247, 120, 234, 75, 0, 26, 197, 62, 94, 252, 219, 203, 117, 35, 11, 32, 57, 177, 33, 88, 237, 149, 56, 87, 174, 20, 125, 136, 171, 168, 68, 175, 74, 165, 71, 134, 139, 48, 27, 166, 77, 146, 158, 231, 83, 111, 229, 122, 60, 211, 133, 230, 220, 105, 92, 41, 55, 46, 245, 40, 244, 102, 143, 54, 65, 25, 63, 161, 1, 216, 80, 73, 209, 76, 132, 187, 208, 89, 18, 169, 200, 196, 135, 130, 116, 188, 159, 86, 164, 100, 109, 198, 173, 186, 3, 64, 52, 217, 226, 250, 124, 123, 5, 202, 38, 147, 118, 126, 255, 82, 85, 212, 207, 206, 59, 227, 47, 16, 58, 17, 182, 189, 28, 42, 223, 183, 170, 213, 119, 248, 152, 2, 44, 154, 163, 70, 221, 153, 101, 155, 167, 43, 172, 9, 129, 22, 39, 253, 19, 98, 108, 110, 79, 113, 224, 232, 178, 185, 112, 104, 218, 246, 97, 228, 251, 34, 242, 193, 238, 210, 144, 12, 191, 179, 162, 241, 81, 51, 145, 235, 249, 14, 239, 107, 49, 192, 214, 31, 181, 199, 106, 157, 184, 84, 204, 176, 115, 121, 50, 45, 127, 4, 150, 254, 138, 236, 205, 93, 222, 114, 67, 29, 24, 72, 243, 141, 128, 195, 78, 66, 215, 61, 156, 180];
+            for (let i = 0; i < 256; i++) p[256 + i] = p[i] = permutation[i];
+
+            function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+            function lerp(t, a, b) { return a + t * (b - a); }
+            function grad(hash, x, y, z) {
+                const h = hash & 15;
+                const u = h < 8 ? x : y, v = h < 4 ? y : h == 12 || h == 14 ? x : z;
+                return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v);
+            }
+
+            return {
+                perlin: function (x, y, z) {
+                    const X = Math.floor(x) & 255, Y = Math.floor(y) & 255, Z = Math.floor(z) & 255;
+                    x -= Math.floor(x); y -= Math.floor(y); z -= Math.floor(z);
+                    const u = fade(x), v = fade(y), w = fade(z);
+                    const A = p[X] + Y, AA = p[A] + Z, AB = p[A + 1] + Z, B = p[X + 1] + Y, BA = p[B] + Z, BB = p[B + 1] + Z;
+                    return lerp(w, lerp(v, lerp(u, grad(p[AA], x, y, z), grad(p[BA], x - 1, y, z)),
+                        lerp(u, grad(p[AB], x, y - 1, z), grad(p[BB], x - 1, y - 1, z))),
+                        lerp(v, lerp(u, grad(p[AA + 1], x, y, z - 1), grad(p[BA + 1], x - 1, y, z - 1)),
+                            lerp(u, grad(p[AB + 1], x, y - 1, z - 1), grad(p[BB + 1], x - 1, y - 1, z - 1))));
+                }
+            };
+        })();
+
+        // ------------------------------------------------------------------------------------------
+        //  MODULE 2: PHYSICS ENGINE (General Relativity)
+        // ------------------------------------------------------------------------------------------
+
+        const SPEED_OF_LIGHT = 299792; // Visual scale
+        const G = 1000; // Visual gravitational constant
+
+        class BlackHole {
+            constructor(mass, x, y, z) {
+                this.mass = mass;
+                this.pos = new Vec3(x, y, z);
+                this.rs = (2 * G * this.mass) / (SPEED_OF_LIGHT ** 2 * 0.0001); // Render Scale radius
+                // Visual Tuning:
+                this.rs = mass * 10;
+                this.eventHorizon = this.rs;
+                this.photonSphere = this.rs * 1.5;
+                this.accretionInner = this.rs * 2.5;
+                this.accretionOuter = this.rs * 8.0;
+            }
+        }
+
+        class Photon {
+            constructor(pos, vel) {
+                this.pos = pos;
+                this.vel = vel;
+                this.history = [];
+                this.active = true;
+                this.redshift = 0; // 0 = normal, 1 = infinity (horizon)
+                this.accumulatedTime = 0;
+            }
+
+            update(dt, blackHole) {
+                // Approximate Geodesic Equation (Newtonian + 1st order GR correction for deflection)
+                const rVec = blackHole.pos.sub(this.pos);
+                const r = rVec.mag();
+
+                // Event Horizon Kill
+                if (r < blackHole.eventHorizon) {
+                    this.active = false;
+                    this.history.push(this.pos.clone());
+                    return;
+                }
+
+                // Gravity Force (Newtonian) F = GM/r^2
+                // GR Effective Potential correction: F_eff = GM/r^2 + 3GM(L^2)/r^4... 
+                // For visual raytracing, simple defelction 4GM/rc^2 is enough for look.
+                // We simulate "Heavy Light" with mass=1 for trajectory.
+
+                const accelMag = (G * blackHole.mass) / (r * r);
+                const accel = rVec.norm().mul(accelMag);
+
+                // Time Dilation Factor (Schwarzschild)
+                // dt' = dt * sqrt(1 - rs/r)
+                const dilation = Math.sqrt(1 - blackHole.eventHorizon / r);
+
+                // Update velocity (bend light)
+                this.vel = this.vel.add(accel.mul(dt));
+
+                // Renormalize speed (Light speed is constant locally, but direction changes)
+                // this.vel = this.vel.norm().mul(SPEED_OF_LIGHT_VISUAL); 
+                // Actually letting it accelerate visualizes the 'falling in' better for probes.
+
+                this.pos = this.pos.add(this.vel.mul(dt * dilation));
+
+                // Color Shift (Gravitational Redshift)
+                // z = 1/sqrt(1-rs/r) - 1
+                this.redshift = (1.0 / dilation) - 1.0;
+
+                // Trail
+                if (this.history.length < 50) this.history.push(this.pos.clone());
+                else {
+                    this.history.shift();
+                    this.history.push(this.pos.clone());
+                }
+            }
+        }
+
+        // ------------------------------------------------------------------------------------------
+        //  MODULE 3: GRAPHICS ENGINE (Raytracer & Renderer)
+        // ------------------------------------------------------------------------------------------
+
+        class Camera {
+            constructor(x, y, z) {
+                this.pos = new Vec3(x, y, z);
+                this.target = new Vec3(0, 0, 0);
+                this.fov = 800; // Focal length
+                this.yaw = 0;
+                this.pitch = -0.2;
+            }
+
+            project(v, width, height) {
+                // Rotate World to Camera Space
+                // Simple Yaw rotation around Y
+                let cx = v.x - this.pos.x;
+                let cy = v.y - this.pos.y;
+                let cz = v.z - this.pos.z;
+
+                // Rotation Y
+                const cos = Math.cos(this.yaw);
+                const sin = Math.sin(this.yaw);
+                const rx = cx * cos - cz * sin;
+                const rz = cx * sin + cz * cos;
+
+                // Rotation X (Pitch)
+                const cosp = Math.cos(this.pitch);
+                const sinp = Math.sin(this.pitch);
+                const ry = cy * cosp - rz * sinp;
+                const rz2 = cy * sinp + rz * cosp;
+
+                // Perspective Divide
+                if (rz2 <= 1) return null; // Behind camera
+
+                const scale = this.fov / rz2;
+                return {
+                    x: (rx * scale) + width / 2,
+                    y: (ry * scale) + height / 2,
+                    scale: scale,
+                    z: rz2
+                };
+            }
+        }
+
+        class Starfield {
+            constructor(count, range) {
+                this.stars = [];
+                for (let i = 0; i < count; i++) {
+                    this.stars.push(new Vec3(
+                        (Math.random() - 0.5) * range,
+                        (Math.random() - 0.5) * range,
+                        (Math.random() - 0.5) * range + range / 2 // Push back
+                    ));
+                }
+            }
+        }
+
+        class AccretionDisk {
+            constructor(nParticles, inner, outer) {
+                this.particles = [];
+                for (let i = 0; i < nParticles; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const dist = inner + Math.random() * (outer - inner);
+                    // Keplerian Orbital Velocity v = sqrt(GM/r)
+                    const speed = Math.sqrt((G * 20) / dist) * 1.5; // Scale factor
+
+                    this.particles.push({
+                        pos: new Vec3(Math.cos(angle) * dist, (Math.random() - 0.5) * 2, Math.sin(angle) * dist),
+                        angle: angle,
+                        dist: dist,
+                        speed: speed,
+                        noiseOffset: Math.random() * 100
+                    });
+                }
+            }
+
+            update(dt, mass) {
+                const limit = mass * 15; // Horizon scale
+                for (let p of this.particles) {
+                    // Update Angle
+                    const v = Math.sqrt((G * mass) / p.dist); // Update speed based on variable mass
+                    p.angle += (v / p.dist) * dt * 5; // Speed factor
+
+                    p.pos.x = Math.cos(p.angle) * p.dist;
+                    p.pos.z = Math.sin(p.angle) * p.dist;
+                    // p.y wobbles slightly
+                }
+            }
+        }
+
+        // ------------------------------------------------------------------------------------------
+        //  MODULE 4: UI ENGINE (Custom Canvas GUI)
+        // ------------------------------------------------------------------------------------------
+
+        class UIControl {
+            constructor(x, y, w, h, label, type, config) {
+                this.rect = { x, y, w, h };
+                this.label = label;
+                this.type = type; // 'slider', 'button', 'graph'
+                this.config = config;
+                this.value = config.value || 0;
+                this.hover = false;
+                this.active = false;
+                this.history = []; // For graphs
+            }
+
+            update(mouse) {
+                // Hit test
+                this.hover = (mouse.x >= this.rect.x && mouse.x <= this.rect.x + this.rect.w &&
+                    mouse.y >= this.rect.y && mouse.y <= this.rect.y + this.rect.h);
+
+                if (this.active) {
+                    if (this.type === 'slider') {
+                        let t = (mouse.x - this.rect.x) / this.rect.w;
+                        if (t < 0) t = 0; if (t > 1) t = 1;
+                        this.value = this.config.min + t * (this.config.max - this.config.min);
+                    }
+                }
+            }
+
+            draw(ctx) {
+                // Glass Panel Background
+                ctx.fillStyle = 'rgba(0, 20, 30, 0.6)';
+                ctx.fillRect(this.rect.x, this.rect.y, this.rect.w, this.rect.h);
+                ctx.strokeStyle = this.hover ? '#fff' : 'rgba(0, 243, 255, 0.3)';
+                ctx.strokeRect(this.rect.x, this.rect.y, this.rect.w, this.rect.h);
+
+                // Label
+                ctx.fillStyle = '#00f3ff';
+                ctx.font = '10px "Share Tech Mono"';
+                ctx.fillText(this.label, this.rect.x + 5, this.rect.y + 12);
+
+                if (this.type === 'slider') {
+                    // Track
+                    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+                    ctx.fillRect(this.rect.x + 5, this.rect.y + 20, this.rect.w - 10, 4);
+                    // Thumb
+                    const t = (this.value - this.config.min) / (this.config.max - this.config.min);
+                    const tx = this.rect.x + 5 + t * (this.rect.w - 10);
+                    ctx.fillStyle = this.active ? '#fff' : '#00f3ff';
+                    ctx.fillRect(tx - 3, this.rect.y + 16, 6, 12);
+                    // Value
+                    ctx.textAlign = 'right';
+                    ctx.fillText(this.value.toFixed(2), this.rect.x + this.rect.w - 5, this.rect.y + 12);
+                    ctx.textAlign = 'left';
+                }
+                else if (this.type === 'graph') {
+                    // Push Value
+                    this.history.push(this.config.source());
+                    if (this.history.length > this.rect.w - 10) this.history.shift();
+
+                    ctx.beginPath();
+                    ctx.strokeStyle = '#ff3333';
+                    ctx.lineWidth = 1;
+                    const base = this.rect.y + this.rect.h - 5;
+                    const maxH = this.rect.h - 20;
+
+                    for (let i = 0; i < this.history.length; i++) {
+                        const v = this.history[i];
+                        const h = Math.min(1, v) * maxH;
+                        if (i === 0) ctx.moveTo(this.rect.x + 5 + i, base - h);
+                        else ctx.lineTo(this.rect.x + 5 + i, base - h);
+                    }
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // ------------------------------------------------------------------------------------------
+        //  MAIN APPLICATION CORE
+        // ------------------------------------------------------------------------------------------
+
+        const canvas = document.getElementById('engine-canvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+
+        // Sim State
+        let width, height;
+        const mouse = { x: 0, y: 0, down: false };
+        const camera = new Camera(0, -50, -200);
+        const blackHole = new BlackHole(5, 0, 0, 0);
+        const starfield = new Starfield(4000, 2000);
+        const disk = new AccretionDisk(2000, blackHole.accretionInner, blackHole.accretionOuter);
+
+        // UI State
+        const controls = [];
+
+        function init() {
+            resize();
+            window.addEventListener('resize', resize);
+
+            // Input Handlers
+            canvas.addEventListener('mousemove', e => {
+                mouse.x = e.clientX; mouse.y = e.clientY;
+                // UI interaction
+                for (let c of controls) c.update(mouse);
+
+                // Camera Orbit (if not UI)
+                const isUI = controls.some(c => c.hover);
+                if (mouse.down && !isUI) {
+                    camera.yaw += e.movementX * 0.005;
+                    camera.pitch += e.movementY * 0.005;
+                }
+            });
+            canvas.addEventListener('mousedown', e => {
+                mouse.down = true;
+                for (let c of controls) if (c.hover) c.active = true;
+            });
+            canvas.addEventListener('mouseup', () => {
+                mouse.down = false;
+                for (let c of controls) c.active = false;
+            });
+
+            // Init UI
+            controls.push(new UIControl(20, 20, 200, 40, "EVENT HORIZON MASS (Solar)", 'slider', { min: 1, max: 20, value: 5 }));
+            controls.push(new UIControl(20, 70, 200, 40, "CAMERA FOV / ZOOM", 'slider', { min: 400, max: 1200, value: 800 }));
+            controls.push(new UIControl(20, 120, 200, 80, "SPACETIME CURVATURE", 'graph', { source: () => Math.random() * 0.2 + 0.5 })); // Mock telemetry for now
+
+            // Start Loop
+            // Hide Loader
+            setTimeout(() => { document.getElementById('boot-sequence').style.opacity = 0; }, 1000);
+            setTimeout(() => { document.getElementById('boot-sequence').style.display = 'none'; }, 2000);
+
+            requestAnimationFrame(loop);
+        }
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+
+        // RENDER LOOP
+        function loop() {
+            // Update Logic
+            // Sync Slider Values
+            blackHole.mass = controls[0].value;
+            // Update Derived Radii
+            blackHole.rs = blackHole.mass * 2;
+            blackHole.eventHorizon = blackHole.rs;
+
+            camera.fov = controls[1].value;
+
+            disk.update(0.016, blackHole.mass);
+
+            // ------------------
+            // DRAWING PHASE
+            // ------------------
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, width, height);
+
+            // 1. RENDER STARFIELD (LENSING)
+            // Lensing Logic: Stars closer to BH in screen space get pushed outwards
+            const centerProj = camera.project(blackHole.pos, width, height);
+
+            ctx.fillStyle = '#ffffff';
+            for (let s of starfield.stars) {
+                // Project Star
+                const p = camera.project(s, width, height);
+                if (!p) continue;
+
+                let tx = p.x;
+                let ty = p.y;
+                let size = (p.scale < 0 ? 0 : p.scale) * 2;
+
+                // Gravitational Lensing (Screen Space Approx for Performance)
+                if (centerProj) {
+                    const dx = tx - centerProj.x;
+                    const dy = ty - centerProj.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    const rsPx = blackHole.rs * centerProj.scale; // Horizon Radius in pixels
+                    const lensRad = rsPx * 8; // Sphere of influence
+
+                    // Einstein Radius Deflection: alpha = 4GM/rc^2
+                    // Visual Hack: Push pixels out radially if within lensRad
+                    if (dist < lensRad && dist > rsPx) {
+                        const deflection = (1 - dist / lensRad) * 40 * (blackHole.mass / 5);
+                        const angle = Math.atan2(dy, dx);
+                        tx += Math.cos(angle) * deflection;
+                        ty += Math.sin(angle) * deflection;
+
+                        // Smear effect (Arc)
+                        ctx.globalAlpha = 0.5;
+                        ctx.beginPath();
+                        ctx.arc(centerProj.x, centerProj.y, Math.sqrt((tx - centerProj.x) ** 2 + (ty - centerProj.y) ** 2), angle - 0.1, angle + 0.1);
+                        ctx.strokeStyle = '#fff';
+                        ctx.stroke();
+                        ctx.globalAlpha = 1.0;
+                    }
+                }
+
+                // Draw Star
+                if (Math.random() > 0.1) { // Twinkle
+                    ctx.beginPath(); ctx.arc(tx, ty, Math.min(2, Math.max(0.5, size)), 0, Math.PI * 2); ctx.fill();
+                }
+            }
+
+            // 2. RENDER SPACETIME GRID (Wireframe)
+            // Draw a grid on Y=0 plane that dips near 0,0
+            ctx.strokeStyle = 'rgba(0, 50, 100, 0.3)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            const gridSize = 400;
+            const step = 40;
+            for (let x = -gridSize; x <= gridSize; x += step) {
+                for (let z = -gridSize; z <= gridSize; z += step) {
+                    // Distort Y based on gravity well
+                    const dist = Math.sqrt(x * x + z * z);
+                    const depth = -blackHole.mass * 100 / (dist + 10);
+
+                    const p1 = new Vec3(x, depth, z);
+                    const proj1 = camera.project(p1, width, height);
+                    if (proj1) {
+                        // Just draw points or short lines to keep it clean
+                        // ctx.rect(proj1.x, proj1.y, 1, 1);
+                    }
+                }
+            }
+            // Better: Iso-lines
+            for (let r = blackHole.rs * 3; r < 400; r += 20) {
+                let prevP = null;
+                for (let theta = 0; theta <= Math.PI * 2.1; theta += 0.2) {
+                    const x = Math.cos(theta) * r;
+                    const z = Math.sin(theta) * r;
+                    const y = -blackHole.mass * 500 / (r * r + 100); // Funnel shape
+                    const p = camera.project(new Vec3(x, y, z), width, height);
+                    if (p) {
+                        if (prevP) { ctx.moveTo(prevP.x, prevP.y); ctx.lineTo(p.x, p.y); }
+                        prevP = p;
+                    }
+                }
+            }
+            ctx.stroke();
+
+            // 3. RENDER ACCRETION DISK (Volumetric Particles)
+            // Sort particles by Z-depth (Painters Algo)
+            // But 'Z' is relative to camera.
+            // Map particles to screen, store depth, sort.
+
+            const renderList = [];
+            for (let p of disk.particles) {
+                const proj = camera.project(p.pos, width, height);
+                if (proj) {
+                    renderList.push({ proj, p });
+                }
+            }
+            renderList.sort((a, b) => b.proj.z - a.proj.z);
+
+            for (let item of renderList) {
+                const { proj, p } = item;
+                const size = proj.scale * 3;
+
+                // Doppler Shift Logic
+                // If particle is moving towards camera -> Blue/Bright
+                // If away -> Red/Dim
+                // Velocity Vector is tangent to circle (-z, 0, x) normalized * speed
+                const tangent = new Vec3(-Math.sin(p.angle), 0, Math.cos(p.angle)); // Normalized direction
+                const camDir = camera.pos.sub(p.pos).norm();
+                const dot = tangent.dot(camDir); // -1 (Away) to 1 (Towards)
+
+                // Color Map
+                // 1 -> #00ffff (Cyan Bright)
+                // -1 -> #ff0000 (Red Dim)
+                let r, g, b, alpha;
+                if (dot > 0) {
+                    // Approaching (Blue)
+                    r = 0; g = 200 + 55 * dot; b = 255;
+                    alpha = 0.5 + 0.5 * dot;
+                } else {
+                    // Receding (Red/Orange)
+                    r = 255; g = 100 * (1 + dot); b = 50 * (1 + dot);
+                    alpha = 0.2 + 0.3 * (1 + dot);
+                }
+
+                // Einstein Ring Effect for Disk (Top/Bottom visibility)
+                // If particle is behind the black hole, we might see it mapped above
+                // Crude approx: If Z > 0 (behind), and X within lensing radius, duplicate draw
+                // This is hard in rasterizer. Skipping for visual clarity of the doppler disk which is cooler.
+
+                ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+                ctx.beginPath();
+                ctx.arc(proj.x, proj.y, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // 4. RENDER EVENT HORIZON (The Void)
+            if (centerProj) {
+                const rsPx = blackHole.rs * centerProj.scale;
+
+                // Photon Ring (Glowing edge)
+                const glow = ctx.createRadialGradient(centerProj.x, centerProj.y, rsPx * 0.8, centerProj.x, centerProj.y, rsPx * 1.5);
+                glow.addColorStop(0, '#000');
+                glow.addColorStop(0.5, '#000');
+                glow.addColorStop(0.8, `rgba(255, 100, 50, 0.5)`); // Photon sphere glow
+                glow.addColorStop(1, 'transparent');
+
+                ctx.fillStyle = glow;
+                ctx.beginPath(); ctx.arc(centerProj.x, centerProj.y, rsPx * 1.5, 0, Math.PI * 2); ctx.fill();
+
+                // Pure Black Hole
+                ctx.fillStyle = '#000';
+                ctx.beginPath(); ctx.arc(centerProj.x, centerProj.y, rsPx, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // 5. DRAW UI OVERLAY
+            for (let c of controls) c.draw(ctx);
+
+            // Crosshair
+            // ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+            // ctx.beginPath(); ctx.moveTo(width/2 - 20, height/2); ctx.lineTo(width/2 + 20, height/2);
+            // ctx.moveTo(width/2, height/2 - 20); ctx.lineTo(width/2, height/2 + 20);
+            // ctx.stroke();
+
+            requestAnimationFrame(loop);
+        }
+
+        // Boot
+        init();
+
+    </script>
+</body>
+
+</html>

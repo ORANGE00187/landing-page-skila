@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Moon Phases</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Space Mono', monospace;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .label {
+            position: absolute;
+            color: white;
+            opacity: 0.7;
+            font-size: 14px;
+        }
+
+        #p-top {
+            top: 20px;
+            left: 20px;
+        }
+
+        #p-view {
+            bottom: 20px;
+            left: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="label" id="p-top">TOP VIEW (Space)</div>
+    <div class="label" id="p-view">EARTH VIEW (You)</div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+        let ANGLE = 0; // Moon orbit angle (0 = Right, towards sun normally logic)
+        // Assume Sun is on LEFT in this sim?
+        // Prompt says Left casts light.
+        // So Sun (-1000, 0).
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Mouse Drag Angle
+        let DRAG = false;
+        canvas.addEventListener('mousedown', () => DRAG = true);
+        window.addEventListener('mouseup', () => DRAG = false);
+        canvas.addEventListener('mousemove', e => {
+            if (DRAG && e.clientY < height / 2) {
+                // Calculate angle relative to Top View center
+                const cx = width / 2; const cy = height / 4;
+                ANGLE = Math.atan2(e.clientY - cy, e.clientX - cx);
+            }
+        });
+
+        function loop() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, width, height);
+
+            // Divider
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(0, height / 2); ctx.lineTo(width, height / 2); ctx.stroke();
+
+            // --- TOP VIEW ---
+            const cx = width / 2; const cy = height / 4;
+
+            // Sun Light (Left)
+            ctx.fillStyle = '#fbbf24';
+            ctx.beginPath(); ctx.arc(0, cy, 60, 0, Math.PI * 2); ctx.fill();
+            // Rays
+            ctx.strokeStyle = 'rgba(251, 191, 36, 0.2)';
+            for (let i = 0; i < 10; i++) {
+                ctx.beginPath(); ctx.moveTo(60, cy - 50 + i * 10); ctx.lineTo(width, cy - 50 + i * 10); ctx.stroke();
+            }
+
+            // Earth
+            ctx.fillStyle = '#3b82f6';
+            ctx.beginPath(); ctx.arc(cx, cy, 30, 0, Math.PI * 2); ctx.fill();
+            // Night side? Right side is shadow if sun on left
+            ctx.fillStyle = 'rgba(0,0,0,0.8)';
+            ctx.beginPath(); ctx.arc(cx, cy, 30, -Math.PI / 2, Math.PI / 2); ctx.fill();
+
+            // Moon
+            const r = 150;
+            const mx = cx + Math.cos(ANGLE) * r;
+            const my = cy + Math.sin(ANGLE) * r;
+
+            ctx.fillStyle = '#94a3b8';
+            ctx.beginPath(); ctx.arc(mx, my, 15, 0, Math.PI * 2); ctx.fill();
+            // Moon Shadow (Right side always dark)
+            ctx.fillStyle = '#000';
+            ctx.beginPath(); ctx.arc(mx, my, 15, -Math.PI / 2, Math.PI / 2); ctx.fill();
+
+            // --- EARTH VIEW ---
+            // Render what earth sees
+            const vx = width / 2; const vy = height * 0.75;
+            const radius = 100;
+
+            // Phase Logic
+            // If ANGLE = PI (Left, between earth and sun) -> New Moon (All dark)
+            // If ANGLE = 0 (Right, behind earth) -> Full Moon
+            // Wait, standard angle 0 is Right. Sun is Left (PI).
+            // So if Angle = PI (180deg), Moon is at Left. Sun is Left. Moon is between Earth and Sun.
+            // Sun hits LEFT side of Moon. Earth sees RIGHT side of Moon (Shadow). -> New Moon.
+
+            // If Angle = 0. Moon is Right. Sun hits LEFT side. Earth sees LEFT side. -> Full Moon.
+
+            // Phase calculation
+            // We see the side facing Earth (opposite to position vector).
+            // Light vector is (+1, 0) relative to moon? No, light comes from Left (-1, 0).
+            // So lit side is Left (-1, 0).
+
+            // Let's use simple Phase 0 to 1
+            // Angle 0 = Full. Angle PI = New.
+            // We need to draw crescent.
+
+            // Shift angle so 0 is Full
+            let phaseA = ANGLE; // 0 is Right.
+            // -PI to PI
+
+            // Draw Moon Base
+            ctx.fillStyle = '#111'; // Dark
+            ctx.beginPath(); ctx.arc(vx, vy, radius, 0, Math.PI * 2); ctx.fill();
+
+            // Lit part
+            // Complex maths for crescent.
+            // Simple approach: Overlap circles? Or scale axis?
+            // "Terminator" is an arc scaling from -1 to 1 width.
+
+            const w = Math.cos(ANGLE) * radius; // -100 to 100
+
+            ctx.fillStyle = '#fff';
+            // Hemisphere: always draw Left side? Sun is Left.
+            // No, depends on angle.
+
+            // Easier:
+            // 1. Draw Full White Circle
+            // 2. Draw Shadow Ellipse
+
+            // Actually:
+            // If cos(A) > 0 (Right Side, Full-ish)
+            // If cos(A) < 0 (Left Side, New-ish)
+
+            ctx.beginPath();
+            ctx.arc(vx, vy, radius, 0, Math.PI * 2);
+            // Clip??
+
+            // Use visual trick
+            // Always have Left half White (Sun side)?? No, from earth.
+
+            // Correct:
+            // Draw Circle #000
+            // If cos > 0 (Fuller): Draw Right Semicircle White. Draw Ellipse Left White (width w).
+            // If cos < 0 (Newer): Draw Right Semicircle White? No.
+
+            // Let's assume Sun is Left.
+            // Lit Hemisphere is Left. Shadow is Right.
+            // View Vector rotates.
+
+            // Result:
+            // A=0 (Moon Right). View looks at Left Side (Lit). -> Full.
+            // A=PI (Moon Left). View looks at Right Side (Dark). -> New.
+
+            ctx.fillStyle = '#fff';
+            ctx.beginPath(); ctx.arc(vx, vy, radius, -Math.PI / 2, Math.PI / 2, true); // Left Semicircle
+            ctx.fill();
+
+            // Ellipse cover
+            // Width w = cos(A) * R
+            // If w > 0: Ellipse on Right add white.
+            // If w < 0: Ellipse on Left subtract white (draw black).
+
+            const xOffset = w; // -R to R
+
+            if (xOffset > 0) {
+                // Waning/Waxing Gibbous
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.ellipse(vx, vy, xOffset, radius, 0, -Math.PI / 2, Math.PI / 2);
+                ctx.fill();
+            } else {
+                // Crescent
+                ctx.fillStyle = '#000';
+                ctx.beginPath();
+                ctx.ellipse(vx, vy, -xOffset, radius, 0, -Math.PI / 2, Math.PI / 2);
+                ctx.fill();
+            }
+
+            // Mask with main circle to clean edges
+            ctx.globalCompositeOperation = 'destination-in';
+            ctx.beginPath(); ctx.arc(vx, vy, radius, 0, Math.PI * 2); ctx.fill();
+            ctx.globalCompositeOperation = 'source-over';
+
+
+            // Text Phase
+            ctx.fillStyle = 'white'; ctx.textAlign = 'center'; ctx.font = '20px sans-serif';
+            let txt = "Phase";
+            if (Math.abs(ANGLE) < 0.2) txt = "Full Moon";
+            else if (Math.abs(Math.abs(ANGLE) - Math.PI) < 0.2) txt = "New Moon";
+            else if (ANGLE > 0) txt = "Waning";
+            else txt = "Waxing";
+
+            ctx.fillText(txt, vx, vy + radius + 40);
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+
+    </script>
+</body>
+
+</html>

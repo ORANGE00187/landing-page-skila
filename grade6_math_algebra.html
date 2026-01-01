@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Algebra Balance</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #1c1917;
+            font-family: 'Cinzel', serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .hud {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            color: #fbbf24;
+            font-size: 30px;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="hud" id="eq-disp">2x + 2 = 10</div>
+    <!-- Reset Btn -->
+    <button onclick="location.reload()" style="position:absolute; top:20px; right:20px;">RESET</button>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const eqDisp = document.getElementById('eq-disp');
+
+        let width, height;
+
+        // Sim State
+        // Start: 2x + 2 = 10 (x = 4)
+        let X_VAL = 4;
+
+        // Left Pan Content
+        let L_ITEMS = [
+            { type: 'x', weight: X_VAL }, { type: 'x', weight: X_VAL },
+            { type: '1', weight: 1 }, { type: '1', weight: 1 }
+        ];
+
+        // Right Pan Content
+        let R_ITEMS = [
+            // 10 ones
+            { type: '1', weight: 1 }, { type: '1', weight: 1 }, { type: '1', weight: 1 }, { type: '1', weight: 1 }, { type: '1', weight: 1 },
+            { type: '1', weight: 1 }, { type: '1', weight: 1 }, { type: '1', weight: 1 }, { type: '1', weight: 1 }, { type: '1', weight: 1 }
+        ];
+
+        // Layout Physics
+        let BALANCE = 0; // Bias. < 0 leans left, > 0 leans right.
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Input: Drag items OFF the pans
+        // Simple click to remove
+        canvas.addEventListener('mousedown', e => {
+            const mx = e.clientX; const my = e.clientY;
+            const cx = width / 2; const cy = height / 2;
+
+            // Check Left Pan (approx pos based on balance)
+            const angle = BALANCE * 0.5;
+            const lx = cx - 200 * Math.cos(angle);
+            const ly = cy - 200 * Math.sin(angle) + 120; // Pan hangs down
+
+            const rx = cx + 200 * Math.cos(angle);
+            const ry = cy + 200 * Math.sin(angle) + 120;
+
+            if (Math.hypot(mx - lx, my - ly) < 60) {
+                // Remove 1 item from Left
+                // Prefer removing numbers first
+                const idx = L_ITEMS.findIndex(i => i.type === '1');
+                if (idx > -1) L_ITEMS.splice(idx, 1);
+                // Else remove x? No, puzzle is to remove constants first. Allow removing X too but that's complex
+            }
+
+            if (Math.hypot(mx - rx, my - ry) < 60) {
+                // Remove 1 item from Right
+                if (R_ITEMS.length > 0) R_ITEMS.pop();
+            }
+
+            updateState();
+        });
+
+        function updateState() {
+            let lw = L_ITEMS.reduce((a, b) => a + b.weight, 0);
+            let rw = R_ITEMS.reduce((a, b) => a + b.weight, 0);
+
+            let diff = rw - lw;
+            // Target Balance
+            const target = diff * 0.1; // Max tilt limits
+
+            // Animate bias? just set target and lerp loop
+            window.targetBal = Math.max(-1, Math.min(1, target * 0.2));
+
+            // Update Text
+            // Count X
+            let xCount = L_ITEMS.filter(i => i.type === 'x').length;
+            let lCons = L_ITEMS.filter(i => i.type === '1').length;
+            let rCons = R_ITEMS.length;
+
+            let str = "";
+            if (xCount > 0) str += `${xCount}x`;
+            if (lCons > 0) str += ` + ${lCons}`;
+            if (lCons === 0 && xCount === 0) str = "0";
+
+            str += " = " + rCons;
+            eqDisp.innerText = str;
+
+            if (xCount > 0 && lCons === 0 && Math.abs(diff) < 0.1) {
+                // Solved!
+                eqDisp.innerText += ` -> x = ${rCons / xCount}`;
+                // Open X crates
+                window.solved = true;
+            }
+        }
+
+        window.curBal = 0; window.targetBal = 0;
+
+        function loop() {
+            // Lerp physics
+            window.curBal += (window.targetBal - window.curBal) * 0.05;
+
+            ctx.fillStyle = '#1c1917';
+            ctx.fillRect(0, 0, width, height);
+
+            const cx = width / 2; const cy = height / 2;
+            const angle = window.curBal * 0.5; // rads
+
+            ctx.save();
+            ctx.translate(cx, cy);
+
+            // Base Pillar
+            ctx.fillStyle = '#444'; ctx.fillRect(-10, 0, 20, 300);
+
+            // Beam
+            ctx.rotate(angle);
+            ctx.fillStyle = '#fbbf24'; // Gold
+            ctx.fillRect(-200, -5, 400, 10);
+
+            // Pans (Hang down always vertically)
+            // Left Pan Pivot
+            ctx.save(); ctx.translate(-200, 0); ctx.rotate(-angle);
+            // Cord
+            ctx.strokeStyle = '#fbbf24'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 120); ctx.stroke();
+            // Pan
+            ctx.beginPath(); ctx.arc(0, 120, 60, 0, Math.PI); ctx.fill();
+
+            // Items L
+            L_ITEMS.forEach((it, i) => {
+                const ox = (i % 3) * 20 - 20;
+                const oy = 120 - Math.floor(i / 3) * 20;
+                if (it.type === 'x') {
+                    ctx.fillStyle = window.solved ? '#fff' : '#3b82f6';
+                    ctx.fillRect(ox - 10, oy - 20, 20, 20);
+                    ctx.fillStyle = '#000'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+                    ctx.fillText(window.solved ? X_VAL : 'x', ox, oy - 5);
+                } else {
+                    ctx.fillStyle = '#f59e0b';
+                    ctx.beginPath(); ctx.arc(ox, oy - 10, 8, 0, Math.PI * 2); ctx.fill();
+                }
+            });
+            ctx.restore();
+
+            // Right Pan Pivot
+            ctx.save(); ctx.translate(200, 0); ctx.rotate(-angle);
+            ctx.strokeStyle = '#fbbf24'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 120); ctx.stroke();
+            ctx.fillStyle = '#fbbf24';
+            ctx.beginPath(); ctx.arc(0, 120, 60, 0, Math.PI); ctx.fill();
+            // Items R (All ones)
+            R_ITEMS.forEach((it, i) => {
+                const ox = (i % 4) * 15 - 20;
+                const oy = 120 - Math.floor(i / 4) * 15;
+                ctx.fillStyle = '#f59e0b';
+                ctx.beginPath(); ctx.arc(ox, oy - 8, 6, 0, Math.PI * 2); ctx.fill();
+            });
+            ctx.restore();
+
+            ctx.restore();
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+
+    </script>
+</body>
+
+</html>

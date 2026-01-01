@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Protein Synthesis Engine</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #0c0a15;
+            font-family: 'Share Tech Mono', monospace;
+            color: white;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+        }
+
+        /* RIBOSOME HUD */
+        .hud-panel {
+            pointer-events: auto;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #4f46e5;
+            padding: 15px;
+            border-radius: 8px;
+            backdrop-filter: blur(5px);
+        }
+
+        #status-bar {
+            align-self: center;
+            text-align: center;
+        }
+
+        .status-txt {
+            font-size: 24px;
+            color: #a5b4fc;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        #pool-area {
+            height: 150px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            justify-content: center;
+            overflow-x: auto;
+            background: rgba(16, 16, 30, 0.9);
+            border-top: 2px solid #4f46e5;
+            padding: 10px;
+            pointer-events: auto;
+        }
+
+        .trna-card {
+            width: 80px;
+            height: 100px;
+            background: #1e1b4b;
+            border: 1px solid #4338ca;
+            border-radius: 5px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            padding: 5px;
+            cursor: grab;
+            transition: transform 0.1s;
+        }
+
+        .trna-card:active {
+            cursor: grabbing;
+            transform: scale(0.95);
+        }
+
+        .trna-anticodon {
+            font-size: 18px;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .aa-gem {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            box-shadow: 0 0 10px currentColor;
+        }
+
+        .aa-name {
+            font-size: 10px;
+            color: #aaa;
+        }
+
+        #score-box {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            text-align: right;
+        }
+
+        /* NOTIFICATIONS */
+        #notify {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 40px;
+            font-weight: bold;
+            text-shadow: 0 0 20px black;
+            opacity: 0;
+            transition: opacity 0.5s;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div id="ui-layer">
+        <div id="score-box">
+            <div style="font-size:12px; color:#666">CHAIN LENGTH</div>
+            <div id="val-len" style="font-size:30px; color:#22c55e">0</div>
+        </div>
+
+        <div id="status-bar" class="hud-panel">
+            <div style="font-size:10px; color:#666">CURRENT CODON</div>
+            <div id="tgt-codon" class="status-txt">---</div>
+        </div>
+
+        <div id="notify">MATCH!</div>
+
+        <div id="pool-area">
+            <!-- Generated tRNAs go here -->
+            <div style="color:#666; font-size:12px;">DRAG MATCHING tRNA HERE</div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * PROTEIN SYNTHESIS ENGINE
+         * Visualizes mRNA Translation.
+         * Concept: Assembly Line. Match Codon -> Anti-Codon.
+         */
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const poolArea = document.getElementById('pool-area');
+        const tgtCodonDisp = document.getElementById('tgt-codon');
+        const notifyDisp = document.getElementById('notify');
+        const lenDisp = document.getElementById('val-len');
+
+        let W, H;
+
+        // --- GENETIC CODE ---
+        const CODONS = {
+            'AUG': { aa: 'Met', col: '#ef4444' }, // Start
+            'UUU': { aa: 'Phe', col: '#f97316' },
+            'UUA': { aa: 'Leu', col: '#eab308' },
+            'GCU': { aa: 'Ala', col: '#22c55e' },
+            'AAU': { aa: 'Asn', col: '#06b6d4' },
+            'CAG': { aa: 'Gln', col: '#3b82f6' },
+            'UGG': { aa: 'Trp', col: '#a855f7' },
+            'GGU': { aa: 'Gly', col: '#ec4899' }
+        };
+        const CODON_KEYS = Object.keys(CODONS);
+
+        // --- STATE ---
+        let MRNA = []; // List of codons
+        let CHAIN = []; // List of amino acids { type, x, y }
+        let CURRENT_IDX = 0;
+        let STATE = 'WAITING'; // WAITING, BINDING, MOVING
+
+        let RIBO_X = 0; // Visual pos
+
+        // Dragging
+        let DRAGGED_TRNA = null;
+
+        function init() {
+            resize();
+            window.addEventListener('resize', resize);
+
+            // Generate Random mRNA
+            MRNA.push('AUG'); // Start
+            for (let i = 0; i < 20; i++) MRNA.push(CODON_KEYS[Math.floor(Math.random() * CODON_KEYS.length)]);
+
+            refreshPool();
+            updateTarget();
+
+            loop();
+        }
+
+        function resize() {
+            W = canvas.width = window.innerWidth;
+            H = canvas.height = window.innerHeight;
+            RIBO_X = W / 2 - 100;
+        }
+
+        // --- LOGIC ---
+        function getAntiCodon(c) {
+            const map = { 'A': 'U', 'U': 'A', 'G': 'C', 'C': 'G' };
+            return c.split('').map(b => map[b]).join('');
+        }
+
+        function updateTarget() {
+            const codon = MRNA[CURRENT_IDX];
+            tgtCodonDisp.innerText = codon;
+            tgtCodonDisp.style.color = CODONS[codon].col;
+        }
+
+        function refreshPool() {
+            poolArea.innerHTML = '';
+
+            // Should contain Correct result + 3 Random decoys
+            const correct = MRNA[CURRENT_IDX];
+            const opts = [correct];
+            while (opts.length < 4) {
+                const r = CODON_KEYS[Math.floor(Math.random() * CODON_KEYS.length)];
+                if (!opts.includes(r)) opts.push(r);
+            }
+            // Shuffle
+            opts.sort(() => Math.random() - 0.5);
+
+            opts.forEach(c => {
+                const ac = getAntiCodon(c);
+                const info = CODONS[c];
+
+                const card = document.createElement('div');
+                card.className = 'trna-card';
+                card.draggable = true;
+                card.innerHTML = `
+                    <div class="aa-gem" style="background:${info.col}; border:2px solid #fff;"></div>
+                    <div class="aa-name">${info.aa}</div>
+                    <div class="trna-anticodon">${ac}</div>
+                `;
+
+                // DnD Events
+                card.addEventListener('dragstart', (e) => {
+                    DRAGGED_TRNA = { codon: c, info: info }; // We store the codon it MATCHES
+                    // Style drag image? Default is fine.
+                });
+
+                card.addEventListener('dragend', () => DRAGGED_TRNA = null);
+
+                poolArea.appendChild(card);
+            });
+        }
+
+        // Drop Area (Canvas)
+        canvas.addEventListener('dragover', e => e.preventDefault());
+        canvas.addEventListener('drop', e => {
+            e.preventDefault();
+            if (!DRAGGED_TRNA) return;
+
+            const target = MRNA[CURRENT_IDX];
+
+            if (DRAGGED_TRNA.codon === target) {
+                success(DRAGGED_TRNA.info);
+            } else {
+                fail();
+            }
+        });
+
+        function success(info) {
+            // Anim
+            notifyDisp.innerText = "MATCH!";
+            notifyDisp.style.color = "#22c55e";
+            notifyDisp.style.opacity = 1;
+            setTimeout(() => notifyDisp.style.opacity = 0, 1000);
+
+            // Add to chain
+            CHAIN.push({ aa: info.aa, col: info.col, x: RIBO_X + 50, y: H / 2 - 50 });
+            lenDisp.innerText = CHAIN.length;
+
+            // Advance
+            CURRENT_IDX++;
+            STATE = 'MOVING';
+
+            refreshPool();
+            updateTarget();
+        }
+
+        function fail() {
+            notifyDisp.innerText = "MISMATCH";
+            notifyDisp.style.color = "#ef4444";
+            notifyDisp.style.opacity = 1;
+            setTimeout(() => notifyDisp.style.opacity = 0, 1000);
+        }
+
+        // --- PHYSICS & RENDER ---
+        let tapeOffset = 0;
+
+        function loop() {
+            ctx.fillStyle = '#0c0a15';
+            ctx.fillRect(0, 0, W, H);
+
+            const cy = H / 2;
+
+            // 1. DRAW mRNA TAPE
+            // Scrolling left as we advance
+            const targetX = -CURRENT_IDX * 80; // 80px per codon
+            tapeOffset += (targetX - tapeOffset) * 0.1;
+
+            const startX = W / 2 - 40; // Center under ribosome slot
+
+            ctx.font = '24px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            MRNA.forEach((codon, i) => {
+                const x = startX + tapeOffset + i * 80;
+
+                // Connector line
+                ctx.strokeStyle = '#333'; ctx.lineWidth = 4;
+                ctx.beginPath(); ctx.moveTo(0, cy + 60); ctx.lineTo(W, cy + 60); ctx.stroke();
+
+                // Nucleotides
+                // Draw 3 blocks
+                ctx.fillStyle = '#1e1b4b';
+                ctx.fillRect(x - 35, cy + 40, 70, 40);
+
+                // Text
+                ctx.fillStyle = (i === CURRENT_IDX) ? '#fff' : '#666';
+                if (i < CURRENT_IDX) ctx.fillStyle = '#444'; // Done
+                ctx.fillText(codon, x, cy + 60);
+
+                // Highlight current slot
+                if (i === CURRENT_IDX) {
+                    ctx.strokeStyle = '#4f46e5'; ctx.lineWidth = 2;
+                    ctx.strokeRect(x - 35, cy + 40, 70, 40);
+                }
+            });
+
+            // 2. DRAW RIBOSOME
+            // Big translucent blobs
+            // Small subunit (bottom)
+            ctx.fillStyle = 'rgba(79, 70, 229, 0.3)';
+            ctx.beginPath();
+            ctx.ellipse(W / 2, cy + 70, 100, 60, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#4f46e5'; ctx.lineWidth = 2; ctx.stroke();
+
+            // Large subunit (top)
+            ctx.fillStyle = 'rgba(79, 70, 229, 0.5)';
+            ctx.beginPath();
+            ctx.ellipse(W / 2, cy - 30, 120, 80, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Slot A and P
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.fillRect(W / 2 - 70, cy - 60, 60, 80); // P site (Growing chain)
+            ctx.fillRect(W / 2 + 10, cy - 60, 60, 80); // A site (New arrival)
+
+            ctx.fillStyle = '#fff'; ctx.font = '12px sans-serif';
+            ctx.fillText("P", W / 2 - 40, cy - 70);
+            ctx.fillText("A", W / 2 + 40, cy - 70);
+
+            // 3. DRAW POLYPEPTIDE CHAIN
+            // Physics Chain
+            // Anchor point (P site exit tunnel)
+            const anchorX = W / 2 - 40;
+            const anchorY = cy - 80;
+
+            // Simulate chain nodes
+            // Start from end of array (newest) at Anchor
+
+            let lx = anchorX;
+            let ly = anchorY;
+
+            // Reverse loop to draw from anchor outwards
+            for (let i = CHAIN.length - 1; i >= 0; i--) {
+                const node = CHAIN[i];
+
+                // Physics: Float upwards and sway
+                // Ideal position relative to prev
+                const sway = Math.sin(Date.now() * 0.002 + i * 0.5) * 10;
+                const tx = anchorX + sway + (CHAIN.length - 1 - i) * 5; // drift right slightly
+                const ty = anchorY - (CHAIN.length - 1 - i) * 35; // drift up
+
+                // Lerp
+                node.x += (tx - node.x) * 0.1;
+                node.y += (ty - node.y) * 0.1;
+
+                // Draw Bond
+                if (i < CHAIN.length - 1) {
+                    const prev = CHAIN[i + 1]; // Actually the one visually below
+                    // Wait, logic inverted. 
+                    // Newest is at Anchor.
+                    // Previous is above.
+                }
+                // Just draw line to lx, ly
+                if (i !== CHAIN.length - 1) { // Not the anchor one itself?
+                    // Actually anchor one connects to Ribosome
+                }
+
+                // Draw Gem
+                ctx.fillStyle = node.col;
+                ctx.shadowBlur = 10; ctx.shadowColor = node.col;
+                ctx.beginPath(); ctx.arc(node.x, node.y, 14, 0, Math.PI * 2); ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Label
+                ctx.fillStyle = '#000'; ctx.font = '10px sans-serif';
+                ctx.fillText(node.aa, node.x, node.y + 3);
+
+                // Line to next
+                if (i < CHAIN.length - 1) {
+                    const next = CHAIN[i + 1]; // Visual above
+                    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.moveTo(node.x, node.y); ctx.lineTo(next.x, next.y); ctx.stroke();
+                } else {
+                    // Line to Anchor/Ribosome if it's the newest
+                    // Actually node IS the pos.
+                    // Line connecting nodes
+                }
+
+                // Update link
+                // lx = node.x; ly = node.y;
+            }
+
+            // Connect newest to P-site
+            if (CHAIN.length > 0) {
+                const newest = CHAIN[CHAIN.length - 1];
+                ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(anchorX, anchorY + 20); ctx.lineTo(newest.x, newest.y); ctx.stroke();
+            }
+
+            requestAnimationFrame(loop);
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

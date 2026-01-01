@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Holographic Topography</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: monospace;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .label {
+            color: #10b981;
+            position: absolute;
+            font-size: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="label" style="top: 20px; left: 20px;">2D MAP (Contour)</div>
+    <div class="label" style="top: 20px; right: 20px;">3D VIEW (Mesh)</div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+        // Terrain Data
+        const S = 40; // Size
+        let H_MAP = [];
+
+        // Slicer
+        let SLICE_HV = 0.5; // Height 0 to 1
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            // Gen Terrain
+            if (H_MAP.length == 0) {
+                for (let y = 0; y <= S; y++) {
+                    let row = [];
+                    for (let x = 0; x <= S; x++) {
+                        // Peak
+                        let dx = x - S / 2; let dy = y - S / 2;
+                        let d = Math.sqrt(dx * dx + dy * dy);
+                        let h = Math.max(0, 1 - d / (S / 2));
+                        // Noise
+                        h += Math.sin(x * 0.5) * 0.1 + Math.cos(y * 0.5) * 0.1;
+                        row.push(h);
+                    }
+                    H_MAP.push(row);
+                }
+            }
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Input
+        let DRAG = false;
+        canvas.addEventListener('mousedown', e => { if (e.clientX > width / 2) DRAG = true; });
+        window.addEventListener('mouseup', () => DRAG = false);
+        canvas.addEventListener('mousemove', e => {
+            if (DRAG) {
+                let h = 1 - (e.clientY / height);
+                SLICE_HV = Math.max(0, Math.min(1, h));
+            }
+        });
+
+        function loop() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, width, height);
+
+            // Layout
+            const w2 = width / 2;
+
+            // Draw 2D Map (Left)
+            // Draw Contour Lines at specific intervals? Or just the Slice line?
+            // Draw standard intervals
+            ctx.strokeStyle = '#064e3b';
+            for (let level = 0.1; level < 1.0; level += 0.1) {
+                drawContour(0, 0, w2, height, level, '#065f46');
+            }
+            // Active Slice (Bright)
+            drawContour(0, 0, w2, height, SLICE_HV, '#10b981');
+
+            // Draw 3D View (Right)
+            // Isometric Mesh
+            const cx = w2 + w2 / 2; const cy = height / 2;
+            const scale = 10;
+
+            // Draw Mesh
+            for (let y = 0; y < S; y++) {
+                for (let x = 0; x < S; x++) {
+                    let h1 = H_MAP[y][x];
+                    let h2 = H_MAP[y][x + 1]; // Right
+                    let h3 = H_MAP[y + 1][x]; // Down
+
+                    // Project
+                    let p1 = iso(x, y, h1);
+                    let p2 = iso(x + 1, y, h2);
+                    let p3 = iso(x, y + 1, h3); // Approx grid lines
+
+                    ctx.strokeStyle = '#065f46';
+                    ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p3.x, p3.y); ctx.stroke();
+                }
+            }
+
+            // Draw Slicer Plane
+            let py = cy + 100 - SLICE_HV * 200; // Fake Z height
+            ctx.fillStyle = 'rgba(16, 185, 129, 0.2)';
+            ctx.strokeStyle = '#10b981';
+            // Plane polygon
+            // Just draw a box around the mesh
+            // ... Visualizing intersection is hard in wireframe.
+            // Just draw line at height?
+
+            // Simplified: Color points above slice
+            for (let y = 0; y <= S; y++) {
+                for (let x = 0; x <= S; x++) {
+                    let h = H_MAP[y][x];
+                    if (Math.abs(h - SLICE_HV) < 0.05) {
+                        let p = iso(x, y, h);
+                        ctx.fillStyle = '#34d399'; ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
+                    }
+                }
+            }
+
+
+            function iso(gx, gy, gh) {
+                // simple offset
+                let x = (gx - gy) * 8;
+                let y = (gx + gy) * 4 - (gh * 100);
+                return { x: cx + x, y: cy + y };
+            }
+
+            requestAnimationFrame(loop);
+        }
+
+        function drawContour(bx, by, bw, bh, level, color) {
+            // Marching Squares simplified? or just threshold dots?
+            // Dots is easier for simulation
+            ctx.fillStyle = color;
+            const step = bw / S;
+            const padX = bx + bw / 2 - (S * step) / 2;
+            const padY = by + bh / 2 - (S * step) / 2;
+
+            for (let y = 0; y < S; y++) {
+                for (let x = 0; x < S; x++) {
+                    // Check edges?
+                    let h = H_MAP[y][x];
+                    // If close to level
+                    if (Math.abs(h - level) < 0.05) {
+                        ctx.fillRect(padX + x * step, padY + y * step, 2, 2);
+                    }
+                }
+            }
+        }
+        loop();
+
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | World Builder</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #e0f2fe;
+            font-family: 'Fredoka', sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .toolbar {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            background: white;
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .tool {
+            width: 50px;
+            height: 50px;
+            border-radius: 8px;
+            cursor: pointer;
+            border: 2px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            transition: transform 0.1s;
+        }
+
+        .tool:hover {
+            transform: scale(1.1);
+        }
+
+        .tool.active {
+            border-color: #3b82f6;
+            background: #eff6ff;
+        }
+
+        .sim-btn {
+            background: #3b82f6;
+            color: white;
+            padding: 0 20px;
+            font-weight: bold;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="toolbar">
+        <div class="tool active" onclick="setTool('flat')" title="Plains">🟩</div>
+        <div class="tool" onclick="setTool('mountain')" title="Mountain">⛰️</div>
+        <div class="tool" onclick="setTool('water')" title="Water">💧</div>
+        <div class="tool" onclick="setTool('house')" title="House">🏠</div>
+        <div class="sim-btn" onclick="autoPopulate()">Populate 🏘️</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+        let GRID_SIZE = 16;
+        let MAP = []; // 2D array: { type: 'grass'|'water'|'mountain', height: 0, house: false }
+
+        // Iso
+        const TILE_W = 40;
+        const TILE_H = 20;
+        let OFFSET_X, OFFSET_Y;
+
+        let TOOL = 'flat'; // flat, mountain, water, house
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            OFFSET_X = width / 2;
+            OFFSET_Y = 100;
+
+            // Init Map
+            if (MAP.length === 0) {
+                for (let y = 0; y < GRID_SIZE; y++) {
+                    let row = [];
+                    for (let x = 0; x < GRID_SIZE; x++) {
+                        row.push({ type: 'grass', height: 0, house: false });
+                    }
+                    MAP.push(row);
+                }
+            }
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        window.setTool = (t) => {
+            TOOL = t;
+            document.querySelectorAll('.tool').forEach(el => el.classList.remove('active'));
+            // simple active logic...
+        }
+
+        // Mouse Interaction (Raycast to grid)
+        // Simplified: Loop and check distance
+        let HOVER = { x: -1, y: -1 };
+
+        canvas.addEventListener('mousemove', e => {
+            // Brute force nearest tile center
+            let minDist = 9999;
+            let mx = e.clientX; let my = e.clientY;
+
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    const p = toIso(x, y);
+                    // Adjust p.y for height
+                    const h = MAP[y][x].height * 10;
+                    const dy = (p.y - h) - my;
+                    const dx = p.x - mx;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < 20) { // Approx
+                        HOVER = { x, y };
+                        if (e.buttons === 1) applyTool(x, y);
+                    }
+                }
+            }
+        });
+
+        canvas.addEventListener('mousedown', e => {
+            if (HOVER.x !== -1) applyTool(HOVER.x, HOVER.y);
+        });
+
+        function applyTool(x, y) {
+            const tile = MAP[y][x];
+            if (TOOL === 'flat') { tile.type = 'grass'; tile.height = 0; tile.house = false; }
+            if (TOOL === 'mountain') { tile.type = 'mountain'; tile.height = 2; tile.house = false; }
+            if (TOOL === 'water') { tile.type = 'water'; tile.height = -0.5; tile.house = false; }
+            if (TOOL === 'house') {
+                if (tile.type === 'grass') tile.house = true;
+            }
+        }
+
+        window.autoPopulate = () => {
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    if (MAP[y][x].type === 'grass' && Math.random() > 0.7) MAP[y][x].house = true;
+                }
+            }
+        }
+
+        function toIso(x, y) {
+            return {
+                x: OFFSET_X + (x - y) * TILE_W,
+                y: OFFSET_Y + (x + y) * TILE_H
+            };
+        }
+
+        function loop() {
+            ctx.fillStyle = '#e0f2fe';
+            ctx.fillRect(0, 0, width, height);
+
+            for (let y = 0; y < GRID_SIZE; y++) {
+                for (let x = 0; x < GRID_SIZE; x++) {
+                    const tile = MAP[y][x];
+                    const p = toIso(x, y);
+
+                    // Colors
+                    let topColor = '#4ade80';
+                    let sideColor = '#22c55e';
+                    let h = tile.height * 15;
+
+                    if (tile.type === 'water') {
+                        topColor = '#3b82f6'; sideColor = '#2563eb';
+                        h = -5;
+                        // Wave anim
+                        topColor = `hsl(217, 90%, ${50 + Math.sin(Date.now() * 0.005 + x) * 10}%)`;
+                    }
+                    else if (tile.type === 'mountain') {
+                        topColor = '#94a3b8'; sideColor = '#64748b';
+                        h = 40;
+                    }
+
+                    if (HOVER.x === x && HOVER.y === y) topColor = '#facc15';
+
+                    drawBlock(p.x, p.y, h, topColor, sideColor);
+
+                    // House
+                    if (tile.house) {
+                        drawHouse(p.x, p.y - h);
+                    }
+                }
+            }
+
+            requestAnimationFrame(loop);
+        }
+
+        function drawBlock(x, y, h, cTop, cSide) {
+            // Top Face
+            ctx.fillStyle = cTop;
+            ctx.beginPath();
+            ctx.moveTo(x, y - h);
+            ctx.lineTo(x + TILE_W, y + TILE_H - h);
+            ctx.lineTo(x, y + TILE_H * 2 - h);
+            ctx.lineTo(x - TILE_W, y + TILE_H - h);
+            ctx.fill();
+
+            // Right Side
+            ctx.fillStyle = cSide;
+            ctx.filter = 'brightness(0.8)';
+            ctx.beginPath();
+            ctx.moveTo(x + TILE_W, y + TILE_H - h);
+            ctx.lineTo(x + TILE_W, y + TILE_H * 2); // down to ground or just tile thickness?
+            // Let's make blocks have thickness
+            let thick = 10;
+            if (h < 0) thick = 0; // water
+
+            ctx.lineTo(x, y + TILE_H * 3);
+            ctx.lineTo(x, y + TILE_H * 2 - h);
+            ctx.fill();
+
+            // Left Side
+            ctx.filter = 'brightness(0.6)';
+            ctx.beginPath();
+            ctx.moveTo(x - TILE_W, y + TILE_H - h);
+            ctx.lineTo(x - TILE_W, y + TILE_H * 2);
+            ctx.lineTo(x, y + TILE_H * 3);
+            ctx.lineTo(x, y + TILE_H * 2 - h);
+            ctx.fill();
+
+            ctx.filter = 'none';
+        }
+
+        function drawHouse(x, y) {
+            ctx.fillStyle = '#f43f5e'; // Red roof
+            ctx.beginPath();
+            ctx.moveTo(x, y - 20);
+            ctx.lineTo(x + 10, y - 10);
+            ctx.lineTo(x, y);
+            ctx.lineTo(x - 10, y - 10);
+            ctx.fill();
+            // Walls
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(x - 5, y - 10, 10, 10); // Simplified visual
+        }
+
+        loop();
+
+    </script>
+</body>
+
+</html>

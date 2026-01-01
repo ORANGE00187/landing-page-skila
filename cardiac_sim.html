@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skila.ai | Advanced Cardiology</title>
+    <!-- FONTS -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #020617;
+            /* Deepest Void */
+            font-family: 'Inter', sans-serif;
+            color: white;
+            user-select: none;
+        }
+
+        #sim-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* UI OVERLAY */
+        .ui-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        /* INFO HUD */
+        .info-panel {
+            position: absolute;
+            top: 50%;
+            left: 40px;
+            transform: translateY(-50%);
+            width: 300px;
+            pointer-events: auto;
+        }
+
+        .metric-card {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(10px);
+            border-left: 4px solid #EF4444;
+            padding: 16px;
+            margin-bottom: 12px;
+            border-radius: 0 12px 12px 0;
+            transition: all 0.3s;
+        }
+
+        .metric-card:hover {
+            background: rgba(30, 41, 59, 0.8);
+            transform: translateX(5px);
+        }
+
+        .label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #94A3B8;
+            margin-bottom: 4px;
+        }
+
+        .value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 24px;
+            font-weight: 800;
+            color: white;
+            text-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+        }
+
+        /* LIVE ECG */
+        .ecg-overlay {
+            position: absolute;
+            bottom: 40px;
+            left: 40px;
+            right: 40px;
+            height: 120px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .ecg-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* LABELS */
+        .chamber-label {
+            position: absolute;
+            font-size: 11px;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.4);
+            pointer-events: none;
+            text-align: center;
+            text-transform: uppercase;
+            text-edge: cap;
+        }
+
+        /* CONTROLS */
+        .controls {
+            position: absolute;
+            top: 40px;
+            right: 40px;
+            pointer-events: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .btn-ctrl {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 8px 16px;
+            border-radius: 8px;
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        .btn-ctrl:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .slider-group {
+            background: rgba(15, 23, 42, 0.8);
+            padding: 12px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        input[type=range] {
+            width: 100%;
+            accent-color: #EF4444;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="sim-canvas"></canvas>
+
+    <div class="ui-layer">
+
+        <!-- Metrics -->
+        <div class="info-panel">
+            <h1 class="text-3xl font-black text-white mb-1 tracking-tight">CARDIAC<span class="text-red-500">LAB</span>
+            </h1>
+            <p class="text-xs text-slate-400 mb-8 uppercase tracking-widest">Real-time Hemodynamics</p>
+
+            <div class="metric-card">
+                <div class="label">Heart Rate</div>
+                <div class="value" id="bpm-display">72 <span class="text-xs text-slate-500 font-normal">BPM</span></div>
+            </div>
+
+            <div class="metric-card" style="border-color: #3B82F6;">
+                <div class="label">Stroke Volume</div>
+                <div class="value">70 <span class="text-xs text-slate-500 font-normal">mL</span></div>
+            </div>
+
+            <div class="metric-card" style="border-color: #10B981;">
+                <div class="label">Cardiac Output</div>
+                <div class="value" id="co-display">5.0 <span class="text-xs text-slate-500 font-normal">L/min</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dynamic Labels -->
+        <div id="labels-container"></div>
+
+        <!-- Controls -->
+        <div class="controls">
+            <div class="slider-group">
+                <div class="label">Pacing Control</div>
+                <input type="range" min="40" max="180" value="72" oninput="setBPM(this.value)">
+            </div>
+            <button class="btn-ctrl" onclick="manualPulse()">
+                <i class="fas fa-bolt text-yellow-500 mr-2"></i> MANUAL SHOCK
+            </button>
+            <button class="btn-ctrl" onclick="toggleLabels()">
+                <i class="fas fa-tag text-blue-400 mr-2"></i> TOGGLE ANATOMY
+            </button>
+        </div>
+
+        <!-- ECG -->
+        <div class="ecg-overlay">
+            <canvas id="ecg-canvas" class="ecg-canvas"></canvas>
+        </div>
+    </div>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        /**
+         * SKILA.ai - GOD TIER CARDIAC SIMULATION
+         * - Organic Procedural Mesh
+         * - Smooth Sine-Wave Contraction (No Frame Swapping)
+         * - High-Contrast Particle Flow
+         */
+
+        const canvas = document.getElementById('sim-canvas');
+        const ctx = canvas.getContext('2d');
+        const ecgCvs = document.getElementById('ecg-canvas');
+        const ecgCtx = ecgCvs.getContext('2d');
+
+        let width, height;
+        let time = 0;
+        let showLabels = true;
+
+        // --- STATE ---
+        const SIM = {
+            bpm: 72,
+            targetBpm: 72,
+            phase: 0, // 0 to 1 cycle
+            beatDuration: 833, // ms
+            lastTime: 0
+        };
+
+        const PARTICLES = [];
+        const MAX_PARTICLES = 1200;
+
+        // --- GEOMETRY DEFS ---
+        // We define chambers as separate closed paths to allow distinct fills
+        // Coordinates relative to center 0,0. Scale will be applied later.
+
+        // Right Atrium (Top Left visually, patient's right)
+        // Left Atrium (Top Right visually)
+        // Right Ventricle (Bottom Left)
+        // Left Ventricle (Bottom Right)
+
+        // We will warp these points dynamically
+
+        function getHeartShape(scale, t) {
+            // t is cycle time (0-1)
+            // Beat logic:
+            // 0.0 - 0.4: Diastole (Relaxed)
+            // 0.4 - 0.5: Atrial Systole (Top Squeeze)
+            // 0.5 - 0.9: Ventricular Systole (Bottom Squeeze)
+
+            // Modulation functions for smooth animation
+            // Atrial Contraction
+            let aC = 0;
+            if (t > 0.4 && t < 0.6) {
+                // Bell curve peak at 0.5
+                aC = Math.sin((t - 0.4) * 10 * Math.PI) * 0.15; // Squeeze amount
+            }
+
+            // Ventricular Contraction (Powerful)
+            let vC = 0;
+            if (t > 0.55 && t < 0.95) {
+                // Bell curve peak at 0.75
+                vC = Math.sin((t - 0.55) * 5 * Math.PI) * 0.25;
+            }
+
+            return { aC, vC, scale };
+        }
+
+        // --- PARTICLE SYSTEM ---
+        class BloodCell {
+            constructor() {
+                this.init(true);
+            }
+
+            init(randomY = false) {
+                this.life = 1;
+                // Side: 0=Right(Desat), 1=Left(Sat)
+                this.side = Math.random() > 0.5 ? 1 : 0;
+
+                const scale = Math.min(width, height) * 0.0025;
+                const offset = (Math.random() - 0.5) * 60 * scale;
+
+                if (this.side === 0) { // Right (Blue)
+                    this.x = width / 2 - 60 * scale + offset;
+                    this.y = height / 2 - 150 * scale; // SVC
+                    this.color = `hsl(210, 80%, ${40 + Math.random() * 20}%)`;
+                } else { // Left (Red)
+                    this.x = width / 2 + 60 * scale + offset;
+                    this.y = height / 2 - 150 * scale; // Pulmonary Veins
+                    this.color = `hsl(350, 80%, ${40 + Math.random() * 20}%)`;
+                }
+
+                if (randomY) this.y += Math.random() * 200 * scale;
+
+                this.vx = (Math.random() - 0.5) * 2;
+                this.vy = 0;
+                this.size = Math.random() * 3 + 2;
+            }
+
+            update(dt, phase) {
+                // Physics Field
+                const scale = Math.min(width, height) * 0.0025;
+                const cx = width / 2;
+                const cy = height / 2;
+
+                // Simple Flow Map relative to center
+                const dy = (this.y - cy) / scale;
+                const dx = (this.x - cx) / scale;
+
+                let fx = 0, fy = 0;
+
+                // Vertical Flow
+                if (dy < -40) { // Atria
+                    fy = 2; // Gravity filling
+                    // Squeeze push
+                    if (phase > 0.4 && phase < 0.6) fy += 5;
+                    // Valve Block (Mitral/Tricuspid Closed during Ventricle Systole)
+                    if (phase > 0.6 && dy > -50) fy = -1;
+                } else if (dy < 120) { // Ventricle
+                    fy = 1; // Pool
+                    // Ejection
+                    if (phase > 0.6 && phase < 0.9) {
+                        fy = -15; // SHOOT UP
+                        // Guided to outflow tracts
+                        if (this.side === 0) fx = -5; // Pulmonary (Left Up)
+                        else fx = 5; // Aorta (Right Up? Anatomically usually crossed but simplifies to up)
+                    }
+                } else {
+                    this.init(); // Reset loop
+                }
+
+                // Centering force
+                if (this.side === 0) fx += (-70 - dx) * 0.05;
+                else fx += (70 - dx) * 0.05;
+
+                this.vx += fx * dt * 60;
+                this.vy += fy * dt * 60;
+
+                this.vx *= 0.9;
+                this.vy *= 0.9;
+
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Bounds
+                if (this.y > height + 50 || this.y < -200) this.init();
+            }
+
+            draw(ctx) {
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.side === 0 ? this.size : this.size + 1, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // --- RENDERER ---
+
+        function drawOrgan(ctx, cx, cy, scale, aC, vC) {
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+
+            // Coordinates for a stylized, anatomical-ish heart
+            // We use Bezier curves that are offset by aC (Atrial Contract) and vC (Ventricle Contract)
+
+            // Styles
+            const wallColor = '#9F1239'; // Rose 900
+            const tissueGradient = ctx.createLinearGradient(cx - 100, cy - 100, cx + 100, cy + 200);
+            tissueGradient.addColorStop(0, '#E11D48'); // Red 600
+            tissueGradient.addColorStop(1, '#881337'); // Red 900
+
+            ctx.fillStyle = tissueGradient;
+            ctx.strokeStyle = '#FDA4AF'; // Highlight
+            ctx.lineWidth = 2;
+
+            // DRAW CHAMBERS (Back Layer - Inside)
+
+            // --- RIGHT SIDE (Left on screen) ---
+            const rX = cx - 70 * scale;
+            const lX = cx + 70 * scale;
+            const topY = cy - 80 * scale;
+            const midY = cy;
+            const botY = cy + 140 * scale;
+
+            // Deformations
+            const rW = 70 * scale * (1 - vC); // Ventricle Width shrinks
+            const aW = 60 * scale * (1 - aC); // Atrium Width shrinks
+
+            // Right Ventricle Outline
+            ctx.beginPath();
+            ctx.moveTo(cx, midY - 40 * scale); // Septum Top
+            ctx.quadraticCurveTo(cx - rW * 1.5, midY, cx, botY - (vC * 50 * scale)); // Outer wall squeeze up
+            ctx.lineTo(cx, midY - 40 * scale); // Inner Septum
+            ctx.fillStyle = '#1e293b'; // Empty cavity color (dark)
+            ctx.fill();
+
+            // Left Ventricle Outline
+            ctx.beginPath();
+            ctx.moveTo(cx, midY - 40 * scale);
+            ctx.quadraticCurveTo(cx + rW * 1.6, midY, cx, botY - (vC * 50 * scale));
+            ctx.lineTo(cx, midY - 40 * scale);
+            ctx.fillStyle = '#1e293b';
+            ctx.fill();
+
+
+            // PARTICLES RENDER HERE (Inside)
+            PARTICLES.forEach(p => p.draw(ctx));
+
+            // WALLS / MUSCLE (Front Layer)
+            // We draw the thick septum and outer walls around the fluid
+
+            ctx.shadowColor = 'rgba(0,0,0,0.5)';
+            ctx.shadowBlur = 20;
+
+            // Septum
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - 100 * scale);
+            ctx.lineTo(cx, botY - (vC * 50 * scale));
+            ctx.lineWidth = 15 * scale;
+            ctx.strokeStyle = '#BE123C'; // Muscle Color
+            ctx.stroke();
+
+            // Outer Walls
+            ctx.lineWidth = 8 * scale;
+            ctx.strokeStyle = '#FB7185'; // Light Red
+
+            // Right Wall
+            ctx.beginPath();
+            ctx.moveTo(cx - 20 * scale, cy - 120 * scale); // SVC
+            ctx.bezierCurveTo(cx - 100 * scale * (1 - aC), cy - 60 * scale, cx - 140 * scale * (1 - vC), cy + 80 * scale, cx, botY - (vC * 50 * scale));
+            ctx.stroke();
+
+            // Left Wall
+            ctx.beginPath();
+            ctx.moveTo(cx + 20 * scale, cy - 120 * scale); // Pulm Veins
+            ctx.bezierCurveTo(cx + 100 * scale * (1 - aC), cy - 60 * scale, cx + 140 * scale * (1 - vC), cy + 80 * scale, cx, botY - (vC * 50 * scale));
+            ctx.stroke();
+
+            ctx.shadowBlur = 0;
+
+            // VALVES (Mitral / Tricuspid)
+            // White flaps
+            const valveY = cy - 10 * scale;
+            ctx.beginPath();
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 3;
+
+            // Open if Diastole (t < 0.4) or Atrial Systole (0.4-0.6)
+            // Closed if Ventricular Systole (0.6 - 0.9)
+            const isOpen = SIM.phase < 0.6;
+            const openOff = isOpen ? 20 * scale : 0;
+
+            // Right V (Tricuspid)
+            ctx.moveTo(cx - 10 * scale, valveY);
+            ctx.lineTo(cx - 30 * scale, valveY + openOff);
+            ctx.moveTo(cx - 60 * scale, valveY);
+            ctx.lineTo(cx - 40 * scale, valveY + openOff);
+
+            // Left V (Mitral)
+            ctx.moveTo(cx + 10 * scale, valveY);
+            ctx.lineTo(cx + 30 * scale, valveY + openOff);
+            ctx.moveTo(cx + 60 * scale, valveY);
+            ctx.lineTo(cx + 40 * scale, valveY + openOff);
+
+            ctx.stroke();
+        }
+
+        // --- ECG LOGIC ---
+        const ecgData = [];
+        let ecgScanX = 0;
+
+        function updateECG(dt) {
+            const cvs = ecgCvs;
+            const c = ecgCtx;
+            const w = cvs.width = ecgCvs.offsetWidth;
+            const h = cvs.height = ecgCvs.offsetHeight;
+
+            // Scroll
+            ecgScanX += (w / 200) * (SIM.bpm / 60) * (dt * 60); // Speed
+            if (ecgScanX > w) {
+                ecgScanX = 0;
+                ecgData.length = 0;
+            }
+
+            // Value
+            let y = h / 2;
+            const t = SIM.phase;
+
+            // P Wave (Atrial depol) - 0.1
+            if (t > 0.05 && t < 0.15) y -= 10 * Math.sin((t - 0.05) * 10 * Math.PI);
+            // QRS (Vent depol) - 0.45
+            else if (t > 0.45 && t < 0.55) {
+                if (t < 0.48) y += 10;
+                else if (t < 0.52) y -= 50; // R SPIKE
+                else y += 15;
+            }
+            // T Wave (Repol) - 0.8
+            else if (t > 0.7 && t < 0.9) y -= 15 * Math.sin((t - 0.7) * 5 * Math.PI);
+
+            // Noise
+            y += (Math.random() - 0.5) * 2;
+
+            ecgData.push({ x: ecgScanX, y });
+
+            // Draw
+            c.clearRect(0, 0, w, h);
+            c.strokeStyle = '#EF4444';
+            c.lineWidth = 2;
+            c.beginPath();
+            for (let i = 0; i < ecgData.length; i++) {
+                if (i === 0) c.moveTo(ecgData[i].x, ecgData[i].y);
+                else c.lineTo(ecgData[i].x, ecgData[i].y);
+            }
+            c.stroke();
+
+            // Scan head
+            c.fillStyle = '#fff';
+            c.beginPath(); c.arc(ecgScanX, y, 3, 0, Math.PI * 2); c.fill();
+        }
+
+        // --- MAIN LOOP ---
+        function loop(timestamp) {
+            const dt = (timestamp - SIM.lastTime) / 1000;
+            SIM.lastTime = timestamp;
+
+            // BPM Smooth
+            SIM.bpm += (SIM.targetBpm - SIM.bpm) * 0.1;
+            SIM.beatDuration = 60000 / SIM.bpm;
+
+            // Phase Update
+            const beatTime = (timestamp % SIM.beatDuration);
+            SIM.phase = beatTime / SIM.beatDuration; // 0 to 1
+
+            // UPDATE UI
+            document.getElementById('bpm-display').innerHTML = Math.round(SIM.bpm) + ' <span class="text-xs text-slate-500 font-normal">BPM</span>';
+            const co = (70 * SIM.bpm / 1000).toFixed(1);
+            document.getElementById('co-display').innerHTML = co + ' <span class="text-xs text-slate-500 font-normal">L/min</span>';
+
+            // DRAW
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+
+            // Clear
+            ctx.fillStyle = '#020617';
+            ctx.fillRect(0, 0, width, height);
+
+            // Grid
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (let i = 0; i < width; i += 50) { ctx.moveTo(i, 0); ctx.lineTo(i, height); }
+            for (let i = 0; i < height; i += 50) { ctx.moveTo(0, i); ctx.lineTo(width, i); }
+            ctx.stroke();
+
+            // Heart
+            const scale = Math.min(width, height) * 0.003;
+            const deform = getHeartShape(scale, SIM.phase);
+            drawOrgan(ctx, width / 2, height * 0.45, scale, deform.aC, deform.vC);
+
+            // Update Particles
+            PARTICLES.forEach(p => p.update(dt, SIM.phase));
+
+            // ECG
+            updateECG(dt);
+
+            // Respawn
+            if (PARTICLES.length < MAX_PARTICLES) PARTICLES.push(new BloodCell());
+
+            requestAnimationFrame(loop);
+        }
+
+        // --- EVENTS ---
+        window.addEventListener('resize', () => { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; });
+        window.setBPM = (v) => SIM.targetBpm = parseInt(v);
+        window.manualPulse = () => {
+            // Fake a jump in time to Systole start (0.45)
+            // Complex with timestamp modulus, so we flash UI instead
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, width, height);
+        };
+        window.toggleLabels = () => {
+            const c = document.getElementById('labels-container');
+            showLabels = !showLabels;
+            c.style.display = showLabels ? 'block' : 'none';
+            if (showLabels) updateLabels();
+        };
+
+        function updateLabels() {
+            const c = document.getElementById('labels-container');
+            c.innerHTML = '';
+            const cx = width / 2; const cy = height * 0.45;
+
+            const list = [
+                { t: "Right Atrium", x: cx - 120, y: cy - 100 },
+                { t: "Left Atrium", x: cx + 120, y: cy - 100 },
+                { t: "Right Ventricle", x: cx - 80, y: cy + 100 },
+                { t: "Left Ventricle", x: cx + 80, y: cy + 100 },
+                { t: "Aorta", x: cx + 20, y: cy - 180 },
+            ];
+
+            list.forEach(i => {
+                const el = document.createElement('div');
+                el.className = 'chamber-label';
+                el.style.left = i.x + 'px';
+                el.style.top = i.y + 'px';
+                el.innerText = i.t;
+                c.appendChild(el);
+            });
+        }
+
+        // Init
+        for (let i = 0; i < 800; i++) PARTICLES.push(new BloodCell());
+        setTimeout(updateLabels, 100);
+        window.addEventListener('resize', updateLabels);
+
+        SIM.lastTime = performance.now();
+        requestAnimationFrame(loop);
+
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photon Logic: Ray-Tracing Engine</title>
+    <style>
+        /* 
+         * =========================================
+         *  GLOBAL RESET & TYPOGRAPHY
+         * =========================================
+         */
+        @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Orbitron:wght@500;900&display=swap');
+
+        :root {
+            --bg-void: #000000;
+            --glass-blue: rgba(0, 200, 255, 0.1);
+            --interface-text: #e0e0e0;
+            --interface-accent: #00ffaa;
+            --interface-bg: rgba(20, 20, 20, 0.8);
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: var(--bg-void);
+            font-family: 'Roboto Mono', monospace;
+            color: var(--interface-text);
+            user-select: none;
+        }
+
+        canvas {
+            display: block;
+            outline: none;
+        }
+
+        /* Loading Screen */
+        #loader {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            pointer-events: none;
+            transition: opacity 1s;
+        }
+
+        .title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 24px;
+            color: #fff;
+            text-shadow: 0 0 10px #fff;
+        }
+
+        .sub {
+            font-size: 12px;
+            color: #666;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="optics-canvas"></canvas>
+
+    <div id="loader">
+        <div class="title">PHOTON LOGIC</div>
+        <div class="sub">INITIALIZING GEOMETRIC OPTICS KERNEL...</div>
+    </div>
+
+    <!-- 
+      =========================================
+       THE PHOTON LOGIC ENGINE
+      =========================================
+      A scratch-built Geometric Optics Raytracer.
+    -->
+    <script>
+        /**
+         * PHOTON LOGIC ENGINE v1.0
+         * --------------------------
+         * Core Modules:
+         * 1. Vec2: Vector Math
+         * 2. OpticsMath: Intersection & Physics (Snell/Fresnel)
+         * 3. Scene: ECS for Optical Elements
+         * 4. Raytracer: Recursive Physics Solver
+         * 5. Renderer: Volumetric & Bloom Draw
+         * 6. UI: Custom Interaction Layer
+         */
+
+        // ==========================================================================================
+        //  MODULE 1: MATH LIBRARY (Vec2)
+        // ==========================================================================================
+
+        class Vec2 {
+            constructor(x = 0, y = 0) { this.x = x; this.y = y; }
+            add(v) { return new Vec2(this.x + v.x, this.y + v.y); }
+            sub(v) { return new Vec2(this.x - v.x, this.y - v.y); }
+            mul(s) { return new Vec2(this.x * s, this.y * s); }
+            dot(v) { return this.x * v.x + this.y * v.y; }
+            cross(v) { return this.x * v.y - this.y * v.x; } // 2D Cross Product (Scalar)
+            mag() { return Math.sqrt(this.x ** 2 + this.y ** 2); }
+            norm() { const m = this.mag(); return m === 0 ? new Vec2() : this.mul(1 / m); }
+            dist(v) { return Math.hypot(this.x - v.x, this.y - v.y); }
+            rot(angle) {
+                const c = Math.cos(angle), s = Math.sin(angle);
+                return new Vec2(this.x * c - this.y * s, this.x * s + this.y * c);
+            }
+            perp() { return new Vec2(-this.y, this.x); } // 90 deg rotation
+            clone() { return new Vec2(this.x, this.y); }
+        }
+
+        const EPSILON = 0.001;
+
+        // ==========================================================================================
+        //  MODULE 2: OPTICAL ELEMENTS & SCENE
+        // ==========================================================================================
+
+        class OpticalElement {
+            constructor(pos, type) {
+                this.pos = pos;
+                this.type = type;
+                this.rotation = 0;
+                this.ior = 1.5; // Index of Refraction (Glass)
+                this.selected = false;
+                this.color = '#fff';
+            }
+
+            // Abstract: Returns intersection {t, normal, point} or null
+            intersect(rayOrigin, rayDir) { return null; }
+            contains(point) { return false; }
+            move(delta) { this.pos = this.pos.add(delta); }
+            rotate(angle) { this.rotation += angle; }
+        }
+
+        class MirrorFlat extends OpticalElement {
+            constructor(pos, length) {
+                super(pos, 'mirror');
+                this.length = length;
+                this.ior = Infinity; // Reflective
+            }
+
+            getSeg() {
+                const half = new Vec2(this.length / 2, 0).rot(this.rotation);
+                return { A: this.pos.sub(half), B: this.pos.add(half), N: new Vec2(0, -1).rot(this.rotation) };
+            }
+
+            intersect(ro, rd) {
+                const seg = this.getSeg();
+                const hit = intersectLineSegment(ro, rd, seg.A, seg.B, seg.N);
+                if (hit) return { ...hit, obj: this };
+                return null;
+            }
+
+            contains(p) {
+                const seg = this.getSeg();
+                // Simple box check for UI selection
+                return pointToLineDist(p, seg.A, seg.B) < 10;
+            }
+        }
+
+        class LensSphere extends OpticalElement {
+            constructor(pos, radius, ior = 1.5) {
+                super(pos, 'lens');
+                this.radius = radius;
+                this.ior = ior;
+            }
+
+            intersect(ro, rd) {
+                // Ray-Circle Intersection
+                const oc = ro.sub(this.pos);
+                const a = rd.dot(rd);
+                const b = 2.0 * oc.dot(rd);
+                const c = oc.dot(oc) - this.radius * this.radius;
+                const discriminant = b * b - 4 * a * c;
+
+                if (discriminant < 0) return null;
+
+                let t = (-b - Math.sqrt(discriminant)) / (2.0 * a);
+                if (t <= EPSILON) {
+                    t = (-b + Math.sqrt(discriminant)) / (2.0 * a);
+                    if (t <= EPSILON) return null;
+                }
+
+                const hit = ro.add(rd.mul(t));
+                const normal = hit.sub(this.pos).norm();
+                return { t, point: hit, normal, obj: this };
+            }
+
+            contains(p) { return p.dist(this.pos) < this.radius; }
+        }
+
+        class PrismPoly extends OpticalElement {
+            constructor(pos, vertices, ior = 1.5) {
+                super(pos, 'prism');
+                this.localVerts = vertices; // Relative to 0,0
+                this.ior = ior;
+            }
+
+            getWorldVerts() {
+                return this.localVerts.map(v => v.rot(this.rotation).add(this.pos));
+            }
+
+            intersect(ro, rd) {
+                const verts = this.getWorldVerts();
+                let closest = null;
+                let minDist = Infinity;
+
+                for (let i = 0; i < verts.length; i++) {
+                    const A = verts[i];
+                    const B = verts[(i + 1) % verts.length];
+                    // Normal of edge
+                    const edge = B.sub(A);
+                    const N = edge.perp().norm(); // Outward?
+
+                    const hit = intersectLineSegment(ro, rd, A, B, N);
+                    if (hit && hit.t < minDist) {
+                        minDist = hit.t;
+                        closest = { ...hit, obj: this };
+                    }
+                }
+                return closest;
+            }
+
+            contains(p) {
+                // Ray casting algo for point in poly
+                const verts = this.getWorldVerts();
+                let inside = false;
+                for (let i = 0, j = verts.length - 1; i < verts.length; j = i++) {
+                    const xi = verts[i].x, yi = verts[i].y;
+                    const xj = verts[j].x, yj = verts[j].y;
+                    const intersect = ((yi > p.y) != (yj > p.y)) && (p.x < (xj - xi) * (p.y - yi) / (yj - yi) + xi);
+                    if (intersect) inside = !inside;
+                }
+                return inside;
+            }
+        }
+
+        class LaserSource extends OpticalElement {
+            constructor(pos, color, wavelength) {
+                super(pos, 'laser');
+                this.length = 30; // Body size
+                this.color = color;
+                this.wavelength = wavelength; // Affects dispersion
+                this.active = true;
+            }
+
+            contains(p) {
+                return p.dist(this.pos) < 15;
+            }
+        }
+
+        // --- MATH HELPERS ---
+        function intersectLineSegment(ro, rd, A, B, N) {
+            const v1 = ro.sub(A);
+            const v2 = B.sub(A);
+            const v3 = new Vec2(-rd.y, rd.x); // perp to ray
+            const dot = v2.dot(v3);
+            if (Math.abs(dot) < 0.0001) return null;
+
+            const t1 = v2.cross(v1) / dot; // t along Ray
+            const t2 = v1.dot(v3) / dot;   // t along Segment (0 to 1)
+
+            if (t1 >= EPSILON && (t2 >= 0 && t2 <= 1)) {
+                return { t: t1, point: ro.add(rd.mul(t1)), normal: N };
+            }
+            return null;
+        }
+
+        function pointToLineDist(p, A, B) {
+            const pa = p.sub(A);
+            const ba = B.sub(A);
+            const h = Math.max(0, Math.min(1, pa.dot(ba) / ba.dot(ba)));
+            return pa.sub(ba.mul(h)).mag();
+        }
+
+        // ==========================================================================================
+        //  MODULE 3: RAY TRACER CORE (PHYSICS)
+        // ==========================================================================================
+
+        class RayTracer {
+            constructor(scene, maxBounces = 30) {
+                this.scene = scene;
+                this.maxBounces = maxBounces;
+                this.rays = []; // Stores computed ray segments
+            }
+
+            trace() {
+                this.rays = [];
+                // Find Lasers
+                const lasers = this.scene.elements.filter(e => e.type === 'laser' && e.active);
+
+                lasers.forEach(laser => {
+                    const dir = new Vec2(1, 0).rot(laser.rotation);
+                    if (laser.color === 'white') {
+                        // Split into RGB
+                        this.castRay(laser.pos, dir, '#ff0000', 1.0, 0, 1.3); // Red (Low index mod)
+                        this.castRay(laser.pos, dir, '#00ff00', 1.0, 0, 1.32); // Green
+                        this.castRay(laser.pos, dir, '#0000ff', 1.0, 0, 1.34); // Blue (High index mod)
+                    } else {
+                        // Monochromatic
+                        this.castRay(laser.pos, dir, laser.color, 1.0, 0, 0); // Mod 0 usually
+                    }
+                });
+            }
+
+            castRay(origin, direction, color, intensity, depth, dispersionMod) {
+                if (depth > this.maxBounces || intensity < 0.01) return;
+
+                let closest = null;
+                let minDist = Infinity;
+
+                // Simple Linear Search (Optimization: Quadtree later if needed)
+                for (let el of this.scene.elements) {
+                    if (el.type === 'laser') continue;
+                    const hit = el.intersect(origin, direction);
+                    if (hit && hit.t < minDist) {
+                        minDist = hit.t;
+                        closest = hit;
+                    }
+                }
+
+                // If no hit, go off screen
+                if (!closest) {
+                    this.rays.push({ A: origin, B: origin.add(direction.mul(2000)), color, intensity });
+                    return;
+                }
+
+                // Hit processing
+                const hitPoint = closest.point;
+                const normal = closest.normal;
+                const obj = closest.obj;
+
+                this.rays.push({ A: origin, B: hitPoint, color, intensity });
+
+                // Reflection / Refraction Logic
+                // Determine entering or exiting
+                const entering = direction.dot(normal) < 0;
+                const nNormal = entering ? normal : normal.mul(-1); // Normal always points "out" of medium relative to ray? 
+
+                let n1 = 1.0; // Air
+                let n2 = obj.ior;
+
+                // Dispersion Effect on IOR
+                if (dispersionMod > 0) n2 += (dispersionMod - 1.3) * 0.1;
+
+                if (!entering) { // Exiting medium
+                    let temp = n1; n1 = n2; n2 = temp;
+                }
+
+                const nRatio = n1 / n2;
+                const cosI = -nNormal.dot(direction);
+                const sinT2 = nRatio * nRatio * (1.0 - cosI * cosI);
+
+                // Fresnel Approximation
+                let reflectProb = 1.0;
+                if (sinT2 <= 1.0) {
+                    // Refraction possible, calc fresnel
+                    const cosT = Math.sqrt(1.0 - sinT2);
+                    const rOrth = (n1 * cosI - n2 * cosT) / (n1 * cosI + n2 * cosT);
+                    const rPar = (n2 * cosI - n1 * cosT) / (n2 * cosI + n1 * cosT);
+                    reflectProb = (rOrth * rOrth + rPar * rPar) / 2.0;
+                } else {
+                    // Total Internal Reflection
+                    reflectProb = 1.0;
+                }
+
+                // Spawn Reflection Ray
+                if (reflectProb > 0.05) {
+                    const reflectDir = direction.add(nNormal.mul(2 * cosI)).norm();
+                    this.castRay(hitPoint.add(nNormal.mul(EPSILON)), reflectDir, color, intensity * reflectProb, depth + 1, dispersionMod);
+                }
+
+                // Spawn Refraction Ray (Transmission)
+                if (reflectProb < 1.0) {
+                    const cosT = Math.sqrt(1.0 - sinT2);
+                    const refractDir = direction.mul(nRatio).add(nNormal.mul(nRatio * cosI - cosT)).norm();
+                    this.castRay(hitPoint.sub(nNormal.mul(EPSILON)), refractDir, color, intensity * (1.0 - reflectProb), depth + 1, dispersionMod);
+                }
+            }
+        }
+
+        // ==========================================================================================
+        //  MODULE 4: SCENE & APP LOGIC
+        // ==========================================================================================
+
+        const canvas = document.getElementById('optics-canvas');
+        const ctx = canvas.getContext('2d');
+        let width, height;
+
+        const scene = {
+            elements: []
+        };
+
+        const rayTracer = new RayTracer(scene);
+
+        let mouse = new Vec2();
+        let mouseDown = false;
+        let dragging = null;
+        let rotating = null; // Element being rotated
+
+        // --- PRESETS ---
+        function loadDefaultScene() {
+            scene.elements = [];
+
+            // White Laser
+            const l1 = new LaserSource(new Vec2(100, 300), 'white', 0);
+            scene.elements.push(l1);
+
+            // Prism
+            const prism = new PrismPoly(new Vec2(400, 300), [
+                new Vec2(0, -60), new Vec2(50, 40), new Vec2(-50, 40)
+            ], 1.5);
+            scene.elements.push(prism);
+
+            // Biconvex Lens
+            const lens = new LensSphere(new Vec2(700, 300), 60, 1.4);
+            scene.elements.push(lens);
+
+            // Mirror
+            const mirror = new MirrorFlat(new Vec2(400, 500), 150);
+            scene.elements.push(mirror);
+
+            // Wall mirror
+            const m2 = new MirrorFlat(new Vec2(900, 300), 200);
+            m2.rotation = Math.PI / 2;
+            scene.elements.push(m2);
+        }
+
+        // --- RENDERER ---
+        function drawScene() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, width, height);
+
+            // 1. Draw Volumetric Fog Noise (Static texture sim)
+            // Just simple noise overlay
+            ctx.globalCompositeOperation = 'source-over';
+            // (Skipping expensive noise gen for FPS, simple overlay)
+
+            // 2. Draw Elements
+            scene.elements.forEach(el => {
+                ctx.save();
+                ctx.translate(el.pos.x, el.pos.y);
+                ctx.rotate(el.rotation); // Apply rotation
+
+                if (el.selected) {
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = '#00ffaa';
+                }
+
+                if (el.type === 'laser') {
+                    ctx.fillStyle = '#333';
+                    ctx.fillRect(-15, -10, 30, 20);
+                    ctx.fillStyle = el.color === 'white' ? '#fff' : el.color;
+                    ctx.beginPath(); ctx.arc(15, 0, 4, 0, Math.PI * 2); ctx.fill();
+                    // Arrow
+                    ctx.strokeStyle = '#666'; ctx.beginPath(); ctx.moveTo(-5, -5); ctx.lineTo(5, 0); ctx.lineTo(-5, 5); ctx.stroke();
+                }
+                else if (el.type === 'mirror') {
+                    ctx.strokeStyle = '#aaa';
+                    ctx.lineWidth = 4;
+                    ctx.beginPath(); ctx.moveTo(-el.length / 2, 0); ctx.lineTo(el.length / 2, 0); ctx.stroke();
+                    ctx.strokeStyle = '#00f3ff'; // Reflective side hint
+                    ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.moveTo(-el.length / 2, 0); ctx.lineTo(el.length / 2, 0); ctx.stroke();
+                }
+                else if (el.type === 'lens') {
+                    ctx.fillStyle = 'rgba(200, 240, 255, 0.1)';
+                    ctx.strokeStyle = 'rgba(200, 240, 255, 0.5)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath(); ctx.arc(0, 0, el.radius, 0, Math.PI * 2);
+                    ctx.fill(); ctx.stroke();
+                }
+                else if (el.type === 'prism') {
+                    ctx.fillStyle = 'rgba(200, 240, 255, 0.1)';
+                    ctx.strokeStyle = 'rgba(200, 240, 255, 0.4)';
+                    ctx.beginPath();
+                    el.localVerts.forEach((v, i) => i === 0 ? ctx.moveTo(v.x, v.y) : ctx.lineTo(v.x, v.y));
+                    ctx.closePath();
+                    ctx.fill(); ctx.stroke();
+                }
+
+                // Gizmo if selected - Draw rotation ring
+                if (el.selected) {
+                    ctx.strokeStyle = 'rgba(0,255,170,0.5)';
+                    ctx.setLineDash([5, 5]);
+                    ctx.beginPath(); ctx.arc(0, 0, 70, 0, Math.PI * 2); ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+
+                ctx.restore();
+            });
+
+            // 3. Draw Rays (Bloom Effect)
+            ctx.globalCompositeOperation = 'screen'; // Additive blending
+            // Multi-pass for bloom?? Simple linewidth trick is cheaper
+
+            rayTracer.rays.forEach(r => {
+                ctx.beginPath();
+                ctx.moveTo(r.A.x, r.A.y);
+                ctx.lineTo(r.B.x, r.B.y);
+
+                const alpha = Math.min(1, r.intensity);
+
+                // Core
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = colorWithAlpha(r.color, alpha);
+                ctx.stroke();
+
+                // Glow
+                ctx.lineWidth = 8;
+                ctx.strokeStyle = colorWithAlpha(r.color, alpha * 0.2);
+                ctx.stroke();
+            });
+
+            ctx.globalCompositeOperation = 'source-over';
+
+            // UI Overlay
+            drawUI();
+        }
+
+        function colorWithAlpha(hex, a) {
+            // Assume hex like #RRGGBB
+            if (hex === 'white') return `rgba(255,255,255,${a})`;
+            // simple parsing or just use string interp if standard hex
+            // Let's rely on ctx accepting rgba from hex? No. 
+            // Manual parse
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            if (result) {
+                const r = parseInt(result[1], 16), g = parseInt(result[2], 16), b = parseInt(result[3], 16);
+                return `rgba(${r},${g},${b},${a})`;
+            }
+            return hex;
+        }
+
+        // --- UI SYSTEM ---
+        const toolbar = [
+            { id: 'laser-r', icon: '🔴', action: () => new LaserSource(new Vec2(width / 2, height / 2), '#ff0000', 0) },
+            { id: 'laser-g', icon: '🟢', action: () => new LaserSource(new Vec2(width / 2, height / 2), '#00ff00', 0) },
+            { id: 'laser-b', icon: '🔵', action: () => new LaserSource(new Vec2(width / 2, height / 2), '#0000ff', 0) },
+            { id: 'laser-w', icon: '⚪', action: () => new LaserSource(new Vec2(width / 2, height / 2), 'white', 0) },
+            { id: 'sep', icon: '|' },
+            { id: 'mirror', icon: '🪞', action: () => new MirrorFlat(new Vec2(width / 2, height / 2), 100) },
+            { id: 'lens', icon: '🔍', action: () => new LensSphere(new Vec2(width / 2, height / 2), 50) },
+            { id: 'prism', icon: '🔺', action: () => new PrismPoly(new Vec2(width / 2, height / 2), [new Vec2(0, -50), new Vec2(40, 30), new Vec2(-40, 30)], 1.5) },
+            { id: 'trash', icon: '🗑️', action: () => { if (dragging && dragging.selected) { scene.elements = scene.elements.filter(e => e !== dragging); dragging = null; } } }
+        ];
+
+        function drawUI() {
+            // Draw Toolbar Bottom
+            const boxW = 50;
+            const startX = width / 2 - (toolbar.length * boxW) / 2;
+            const y = height - 70;
+
+            toolbar.forEach((tool, i) => {
+                const x = startX + i * boxW;
+                if (tool.id === 'sep') {
+                    // Separator
+                } else {
+                    ctx.fillStyle = 'rgba(30,30,30,0.8)';
+                    ctx.fillRect(x, y, 40, 40);
+                    ctx.strokeStyle = '#555';
+                    ctx.strokeRect(x, y, 40, 40);
+                    ctx.font = '20px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillStyle = '#fff';
+                    ctx.fillText(tool.icon, x + 20, y + 20);
+                }
+            });
+
+            // Draw Info Panel Top Left
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(10, 10, 250, 80);
+            ctx.fillStyle = '#00ffaa';
+            ctx.font = '12px "Roboto Mono"';
+            ctx.textAlign = 'left';
+            ctx.fillText("PHOTON LOGIC ENGINE", 20, 30);
+            ctx.fillStyle = '#aaa';
+            ctx.fillText(`RAYS: ${rayTracer.rays.length}`, 20, 50);
+            ctx.fillText("Controls: Drag to Move. Alt+Drag to Rotate.", 20, 70);
+        }
+
+        // --- EVENTS ---
+        canvas.addEventListener('mousedown', e => {
+            const rect = canvas.getBoundingClientRect();
+            mouse = new Vec2(e.clientX - rect.left, e.clientY - rect.top);
+            mouseDown = true;
+
+            // Check Toolbar
+            const boxW = 50;
+            const startX = width / 2 - (toolbar.length * boxW) / 2;
+            const y = height - 70;
+            for (let i = 0; i < toolbar.length; i++) {
+                const x = startX + i * boxW;
+                if (mouse.x > x && mouse.x < x + 40 && mouse.y > y && mouse.y < y + 40) {
+                    if (toolbar[i].action) {
+                        const newEl = toolbar[i].action();
+                        if (newEl) scene.elements.push(newEl);
+                        if (toolbar[i].id === 'trash') {
+                            // Handled in action
+                        }
+                    }
+                    return;
+                }
+            }
+
+            // Hit Test Elements
+            // Check Rotation Gizmo first (Alt key)
+            if (e.altKey && dragging) {
+                // Determine start angle
+                // ... logic handled in move
+                return;
+            }
+
+            // Select
+            dragging = null;
+            scene.elements.forEach(el => el.selected = false);
+
+            // Revers iterate form draw order
+            for (let i = scene.elements.length - 1; i >= 0; i--) {
+                if (scene.elements[i].contains(mouse)) {
+                    dragging = scene.elements[i];
+                    dragging.selected = true;
+                    // Move to top
+                    scene.elements.splice(i, 1);
+                    scene.elements.push(dragging);
+                    break;
+                }
+            }
+        });
+
+        canvas.addEventListener('mousemove', e => {
+            const rect = canvas.getBoundingClientRect();
+            const newMouse = new Vec2(e.clientX - rect.left, e.clientY - rect.top);
+
+            if (mouseDown && dragging) {
+                if (e.altKey) {
+                    // Rotate
+                    const center = dragging.pos;
+                    const v1 = mouse.sub(center);
+                    const v2 = newMouse.sub(center);
+                    const angle = Math.atan2(v2.y, v2.x) - Math.atan2(v1.y, v1.x);
+                    dragging.rotate(angle);
+                } else {
+                    // Move
+                    const delta = newMouse.sub(mouse);
+                    dragging.move(delta);
+                }
+            }
+            mouse = newMouse;
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            mouseDown = false;
+            // Raytrace needs update? We run it every frame anyway
+        });
+
+        // --- MAIN LOOP ---
+        function loop() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+
+            rayTracer.trace();
+            drawScene();
+            requestAnimationFrame(loop);
+        }
+
+        // Boot
+        setTimeout(() => document.getElementById('loader').style.opacity = 0, 1000);
+        setTimeout(() => document.getElementById('loader').remove(), 2000);
+        loadDefaultScene();
+        loop();
+
+    </script>
+</body>
+
+</html>

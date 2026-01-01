@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skila.ai | Structural Integrity Lab</title>
+    <!-- FONTS -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #F8FAFC;
+            /* Paper White */
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            user-select: none;
+        }
+
+        /* Blueprint Grid (Isometric-ish) */
+        .blueprint-grid {
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(59, 130, 246, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(59, 130, 246, 0.05) 1px, transparent 1px);
+            background-size: 20px 20px;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        #sim-canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 10;
+        }
+
+        /* UI Overlay */
+        .ui-overlay {
+            position: absolute;
+            top: 2rem;
+            left: 2rem;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid #CBD5E1;
+            box-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.1);
+            border-radius: 12px;
+            padding: 1.5rem;
+            max-width: 280px;
+            pointer-events: auto;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: flex-start;
+            font-size: 0.75rem;
+            margin-bottom: 0.75rem;
+            color: #475569;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+            margin-right: 0.75rem;
+            margin-top: 2px;
+            flex-shrink: 0;
+        }
+
+        /* Action Buttons */
+        .action-btn {
+            background: #F1F5F9;
+            color: #334155;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 10px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid #E2E8F0;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .action-btn:hover {
+            background: #E2E8F0;
+            transform: translateY(-1px);
+        }
+
+        .action-btn:active {
+            transform: translateY(1px);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="blueprint-grid"></div>
+
+    <canvas id="sim-canvas"></canvas>
+
+    <div class="ui-overlay">
+        <div class="glass-panel">
+            <h1 class="text-sm font-bold text-slate-800 uppercase tracking-wide mb-1">Structural Integrity</h1>
+            <p class="text-[10px] text-slate-500 mb-4 font-mono">TRUSS BRIDGE • VERLET PHYSICS</p>
+
+            <!-- Expanded Explanation Legend -->
+            <div class="mb-4 pt-3 border-t border-slate-200">
+                <div class="legend-item">
+                    <div class="legend-color bg-emerald-500"></div>
+                    <div>
+                        <span class="font-bold text-slate-700 block">Compression</span>
+                        <div class="text-[10px] text-slate-400 leading-tight">Forces squeezing the beam together. Common
+                            in the Top Chord.</div>
+                    </div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color bg-amber-500"></div>
+                    <div>
+                        <span class="font-bold text-slate-700 block">Tension</span>
+                        <div class="text-[10px] text-slate-400 leading-tight">Forces stretching the beam apart. Common
+                            in the Bottom Chord.</div>
+                    </div>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color bg-red-500"></div>
+                    <div>
+                        <span class="font-bold text-slate-700 block">Critical Load</span>
+                        <div class="text-[10px] text-slate-400 leading-tight">Beam is near failure point.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 mb-4">
+                <h3 class="text-[10px] font-bold text-slate-600 uppercase mb-2">Structure Analysis</h3>
+                <div class="flex justify-between text-xs mb-1">
+                    <span class="text-slate-500">System Stress:</span>
+                    <span class="font-mono font-bold text-slate-800" id="max-stress-val">0%</span>
+                </div>
+                <div class="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                    <div id="stress-bar" class="h-full bg-emerald-500 w-0 transition-all duration-300"></div>
+                </div>
+            </div>
+
+            <div class="flex gap-2">
+                <button class="action-btn w-full justify-center group" onclick="spawnCrashWeight()">
+                    <i class="fas fa-weight-hanging group-hover:animate-bounce"></i> Drop 5-Ton Weight
+                </button>
+            </div>
+
+            <div class="mt-3 text-[10px] text-slate-400 italic text-center">
+                Drag any joint to manually test elasticity.
+            </div>
+        </div>
+    </div>
+
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        /**
+         * SKILA.ai - Civil Engineering Simulation
+         * - Improved Visibility & Physics (Visible Crash Weights)
+         */
+
+        const canvas = document.getElementById('sim-canvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+
+        let width, height;
+        let points = [];
+        let sticks = [];
+        let crashWeights = []; // List of visible crash objects
+        let dragPoint = null;
+        let liveLoad = { x: 0, speed: 2, radius: 15 };
+        let windTime = 0;
+
+        // --- CONFIG ---
+        const CONFIG = {
+            gravity: 0.5,
+            friction: 0.99,
+            stiffness: 4, // More iterations for stability
+            bounce: 0.5, // Damping
+            colors: {
+                joint: '#94A3B8',
+                beamSafe: '#64748B',
+                beamComp: '#10B981',
+                beamTens: '#F59E0B',
+                beamCrit: '#EF4444'
+            }
+        };
+
+        // --- PHYSICS ENGINE ---
+
+        class Point {
+            constructor(x, y, pinned = false, mass = 1) {
+                this.x = x;
+                this.y = y;
+                this.oldx = x;
+                this.oldy = y;
+                this.pinned = pinned;
+                this.mass = mass;
+            }
+
+            update() {
+                if (this.pinned) return;
+
+                const vx = (this.x - this.oldx) * CONFIG.friction;
+                const vy = (this.y - this.oldy) * CONFIG.friction;
+
+                this.oldx = this.x;
+                this.oldy = this.y;
+
+                this.x += vx;
+                this.y += vy;
+                this.y += CONFIG.gravity * this.mass;
+
+                // Floor limit
+                if (this.y > height) {
+                    this.y = height;
+                    this.oldy = this.y + vy * CONFIG.bounce;
+                }
+            }
+        }
+
+        class Stick {
+            constructor(p1, p2, length) {
+                this.p1 = p1;
+                this.p2 = p2;
+                this.length = length === undefined ? distance(p1, p2) : length;
+                this.stress = 0;
+            }
+
+            update() {
+                const dx = this.p2.x - this.p1.x;
+                const dy = this.p2.y - this.p1.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const diff = this.length - dist;
+                const percent = diff / dist / 2;
+
+                // Stress Calculation
+                this.stress = -diff / 15;
+
+                const offsetx = dx * percent;
+                const offsety = dy * percent;
+
+                if (!this.p1.pinned) {
+                    this.p1.x -= offsetx * 0.5;
+                    this.p1.y -= offsety * 0.5;
+                }
+                if (!this.p2.pinned) {
+                    this.p2.x += offsetx * 0.5;
+                    this.p2.y += offsety * 0.5;
+                }
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.moveTo(this.p1.x, this.p1.y);
+                ctx.lineTo(this.p2.x, this.p2.y);
+
+                let color = CONFIG.colors.beamSafe;
+                let width = 3;
+
+                // Stress Visualization logic
+                if (this.stress < -0.05) { // Compression
+                    const sat = Math.min(Math.abs(this.stress) * 5, 1);
+                    color = CONFIG.colors.beamComp;
+                    width = 3 + sat * 3;
+                }
+                else if (this.stress > 0.05) { // Tension
+                    const sat = Math.min(this.stress * 4, 1);
+                    if (sat > 0.8) color = CONFIG.colors.beamCrit;
+                    else color = CONFIG.colors.beamTens;
+                    width = Math.max(1, 3 - sat * 2);
+                }
+
+                ctx.strokeStyle = color;
+                ctx.lineWidth = width;
+                ctx.stroke();
+
+                // Joints (Draw on ends)
+                ctx.fillStyle = color;
+                ctx.beginPath(); ctx.arc(this.p1.x, this.p1.y, 2, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(this.p2.x, this.p2.y, 2, 0, Math.PI * 2); ctx.fill();
+            }
+        }
+
+        class CrashWeight {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.vy = 0;
+                this.radius = 25;
+                this.attached = false;
+                this.attachedNode = null;
+                this.life = 500; // Despawn timer
+            }
+
+            update() {
+                if (this.attached && this.attachedNode) {
+                    this.x = this.attachedNode.x;
+                    this.y = this.attachedNode.y + this.radius + 15;
+                    this.life--;
+                    return (this.life > 0);
+                }
+
+                this.vy += CONFIG.gravity;
+                this.y += this.vy;
+
+                // Collision Detection with Top Deck nodes
+                if (!this.attached) {
+                    // Check against all points, biased towards upper ones
+                    for (let p of points) {
+                        // Simple AABB-ish check for proximity
+                        if (Math.abs(this.x - p.x) < 40 && Math.abs(this.y - p.y) < 40) {
+                            this.attach(p);
+                            break;
+                        }
+                    }
+
+                    if (this.y > height + 100) return false; // Despawn
+                }
+                return true;
+            }
+
+            attach(node) {
+                this.attached = true;
+                this.attachedNode = node;
+                this.vy = 0;
+
+                // IMPACT PHYSICS
+                node.oldy -= 50; // Violent velocity downwards
+
+                // Add mass to node temporarily?
+                // Or just let the visualization hang and push it down frame by frame
+                // We'll simulate weight by pushing down manually in update loop
+            }
+
+            applyWeight() {
+                if (this.attached && this.attachedNode) {
+                    this.attachedNode.y += 2; // Continuous Heavy Force
+                }
+            }
+
+            draw() {
+                // Draw Weight Icon (1 Ton style)
+                ctx.fillStyle = '#1E293B';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Detail
+                ctx.fillStyle = '#FFF';
+                ctx.font = 'bold 12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('5T', this.x, this.y);
+
+                if (this.attached && this.attachedNode) {
+                    // Chain
+                    ctx.beginPath();
+                    ctx.moveTo(this.x, this.y - this.radius);
+                    ctx.lineTo(this.attachedNode.x, this.attachedNode.y);
+                    ctx.strokeStyle = '#334155';
+                    ctx.lineWidth = 4;
+                    ctx.stroke();
+                }
+            }
+        }
+
+        function distance(p1, p2) {
+            const dx = p1.x - p2.x;
+            const dy = p1.y - p2.y;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        // --- BRIDGE BUILDER ---
+
+        function initBridge() {
+            points = [];
+            sticks = [];
+            crashWeights = [];
+
+            const span = width * 0.75;
+            const segments = 12;
+            const segWidth = span / segments;
+            const startX = (width - span) / 2;
+            const groundY = height * 0.65;
+            const deckY = groundY - 70;
+
+            // 1. Create Points
+            // Bottom Chord
+            for (let i = 0; i <= segments; i++) {
+                const pinned = (i === 0 || i === segments);
+                points.push(new Point(startX + i * segWidth, groundY, pinned));
+            }
+            // Top Chord
+            for (let i = 0; i <= segments; i++) {
+                points.push(new Point(startX + i * segWidth, deckY, false));
+            }
+
+            // 2. Connect
+            const tIdx = segments + 1;
+
+            for (let i = 0; i < segments; i++) {
+                const b1 = points[i];
+                const b2 = points[i + 1];
+                const t1 = points[tIdx + i];
+                const t2 = points[tIdx + i + 1];
+
+                sticks.push(new Stick(b1, b2)); // Bottom
+                sticks.push(new Stick(t1, t2)); // Top
+                sticks.push(new Stick(b1, t1)); // Vert
+                sticks.push(new Stick(b2, t2)); // Vert
+
+                // Diagonals (Warren)
+                if (i % 2 === 0) sticks.push(new Stick(b1, t2));
+                else sticks.push(new Stick(b2, t1));
+            }
+        }
+
+        // --- SIMULATION LOOP ---
+
+        function updateLiveLoad() {
+            const span = width * 0.75;
+            const startX = (width - span) / 2;
+            const endX = startX + span;
+
+            liveLoad.x += liveLoad.speed;
+            if (liveLoad.x > endX) { liveLoad.x = endX; liveLoad.speed *= -1; }
+            if (liveLoad.x < startX) { liveLoad.x = startX; liveLoad.speed *= -1; }
+
+            // Apply Weight to Top Deck
+            // We find points near top deck Y and near load X
+            points.forEach(p => {
+                if (Math.abs(p.y - (height * 0.65 - 70)) < 60) { // Is roughly top node
+                    const dist = Math.abs(p.x - liveLoad.x);
+                    if (dist < 80) {
+                        p.y += (80 - dist) / 80 * 1.5; // Gentle push
+                    }
+                }
+            });
+        }
+
+        function calculateMaxStress() {
+            let max = 0;
+            sticks.forEach(s => max = Math.max(max, Math.abs(s.stress)));
+            return Math.min(Math.round(max * 400), 100); // Normalize to %
+        }
+
+        function animate() {
+            ctx.fillStyle = '#F8FAFC';
+            ctx.fillRect(0, 0, width, height);
+
+            updateLiveLoad();
+
+            // Physics Steps
+            for (let i = 0; i < 4; i++) {
+                points.forEach(p => p.update());
+                sticks.forEach(s => s.update());
+                if (dragPoint) { dragPoint.x = mouseX; dragPoint.y = mouseY; }
+
+                // Apply hung weight forces
+                crashWeights.forEach(w => w.applyWeight());
+            }
+
+            // Update Weights
+            for (let i = crashWeights.length - 1; i >= 0; i--) {
+                const w = crashWeights[i];
+                const alive = w.update();
+                if (!alive) crashWeights.splice(i, 1);
+            }
+
+            // Draw Structure
+            sticks.forEach(s => s.draw());
+
+            // Draw Joints
+            ctx.fillStyle = '#E2E8F0';
+            ctx.strokeStyle = '#64748B';
+            ctx.lineWidth = 1;
+            points.forEach(p => {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.pinned ? 8 : 4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            });
+
+            // Draw Live Load Orb
+            const loadY = (height * 0.65 - 70) - 20;
+
+            ctx.beginPath();
+            ctx.arc(liveLoad.x, loadY + 10, liveLoad.radius, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(59, 130, 246, 0.3)';
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(liveLoad.x, loadY + 10, liveLoad.radius * 0.6, 0, Math.PI * 2);
+            ctx.fillStyle = '#3B82F6';
+            ctx.fill();
+
+            // Draw Crash Weights
+            crashWeights.forEach(w => w.draw());
+
+            // UI Update
+            const stress = calculateMaxStress();
+            document.getElementById('max-stress-val').innerText = stress + '%';
+            const bar = document.getElementById('stress-bar');
+            bar.style.width = stress + '%';
+            if (stress > 80) bar.style.backgroundColor = '#EF4444';
+            else if (stress > 40) bar.style.backgroundColor = '#F59E0B';
+            else bar.style.backgroundColor = '#10B981';
+
+            requestAnimationFrame(animate);
+        }
+
+        // --- INTERACTION ---
+        let mouseX = 0, mouseY = 0;
+
+        function getNearestPoint(x, y) {
+            let min = 10000;
+            let nearest = null;
+            points.forEach(p => {
+                const d = distance({ x, y }, p);
+                if (d < 30 && d < min) { min = d; nearest = p; }
+            });
+            return nearest;
+        }
+
+        canvas.addEventListener('mousedown', e => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = e.clientX - rect.left;
+            mouseY = e.clientY - rect.top;
+            const p = getNearestPoint(mouseX, mouseY);
+            if (p && !p.pinned) dragPoint = p;
+        });
+
+        canvas.addEventListener('mousemove', e => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = e.clientX - rect.left;
+            mouseY = e.clientY - rect.top;
+            canvas.style.cursor = getNearestPoint(mouseX, mouseY) ? 'grab' : 'default';
+        });
+
+        window.addEventListener('mouseup', () => dragPoint = null);
+
+        // Global function for UI
+        window.spawnCrashWeight = function () {
+            // Drop from top center-ish
+            const x = width / 2 + (Math.random() - 0.5) * 300;
+            crashWeights.push(new CrashWeight(x, -50));
+        };
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            initBridge();
+        }
+        window.addEventListener('resize', resize);
+
+        // Boot
+        resize();
+        animate();
+
+    </script>
+</body>
+
+</html>

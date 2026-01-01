@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quantum Wave Tank - The Holographic Lab</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600&display=swap');
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0F172A;
+            /* Deep Void Black */
+            font-family: 'Inter', sans-serif;
+            color: #E2E8F0;
+        }
+
+        /* UI OVERLAY */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 2rem;
+            box-sizing: border-box;
+            z-index: 10;
+        }
+
+        .hud-panel {
+            pointer-events: auto;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            max-width: 320px;
+        }
+
+        h1 {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.25rem;
+            margin: 0 0 0.5rem 0;
+            color: #38bdf8;
+            text-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+        }
+
+        .control-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .control-group label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            color: #94a3b8;
+            margin-bottom: 0.5rem;
+        }
+
+        .holographic-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            outline: none;
+            position: relative;
+        }
+
+        .holographic-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #38bdf8;
+            cursor: pointer;
+            box-shadow: 0 0 10px #38bdf8;
+            border: 2px solid #fff;
+        }
+
+        .mode-toggle {
+            display: flex;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 4px;
+            gap: 4px;
+        }
+
+        .mode-btn {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #64748b;
+            padding: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.3s;
+        }
+
+        .mode-btn.active {
+            background: rgba(56, 189, 248, 0.2);
+            color: #38bdf8;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.1);
+        }
+
+        /* CANVAS CONTAINER */
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: grid;
+            grid-template-columns: 1fr 200px;
+            /* Simulation | Intensity Graph */
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #sim-canvas {
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+        }
+
+        #graph-canvas {
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.2);
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .scan-line {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: rgba(56, 189, 248, 0.5);
+            box-shadow: 0 0 15px #38bdf8;
+            animation: scan 4s linear infinite;
+            pointer-events: none;
+            z-index: 5;
+            opacity: 0.3;
+        }
+
+        @keyframes scan {
+            0% {
+                top: 0%;
+                opacity: 0;
+            }
+
+            10% {
+                opacity: 0.5;
+            }
+
+            90% {
+                opacity: 0.5;
+            }
+
+            100% {
+                top: 100%;
+                opacity: 0;
+            }
+        }
+
+        .stats {
+            font-family: 'JetBrains Mono';
+            font-size: 0.75rem;
+            color: #64748b;
+            margin-top: 1rem;
+        }
+
+        .stats span {
+            color: #facc15;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="canvas-container">
+        <canvas id="sim-canvas"></canvas>
+        <canvas id="graph-canvas"></canvas>
+    </div>
+
+    <div class="scan-line"></div>
+
+    <div id="ui-layer">
+        <!-- TOP LEFT HUD -->
+        <div class="hud-panel">
+            <h1><i class="fas fa-wave-square"></i> QUANTUM TANK</h1>
+
+            <div class="control-group">
+                <label>Wavelength <span id="wv-val">500nm</span></label>
+                <input type="range" min="400" max="700" value="500" class="holographic-slider" id="wavelength-slider">
+                <div
+                    style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 0.7rem; opacity: 0.7;">
+                    <span style="color: #a855f7">High Freq</span>
+                    <span style="color: #ef4444">Low Freq</span>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>Slit Separation <span id="sep-val">4.0λ</span></label>
+                <input type="range" min="10" max="100" value="40" class="holographic-slider" id="separation-slider">
+            </div>
+
+            <div class="mode-toggle">
+                <button class="mode-btn active" onclick="setMode('wave')">
+                    <i class="fas fa-water"></i> WAVE MODE
+                </button>
+                <button class="mode-btn" onclick="setMode('particle')">
+                    <i class="fas fa-certificate"></i> PHOTON MODE
+                </button>
+            </div>
+
+            <div class="stats">
+                Source: <span id="mode-status">Coherent Wave</span><br>
+                Est. Fringe Count: <span id="fringe-count">--</span><br>
+                FPS: <span id="fps-counter">60</span>
+            </div>
+        </div>
+
+        <!-- BOTTOM STATUS -->
+        <div class="hud-panel" style="align-self: flex-start; margin-top: auto; max-width: 100%;">
+            <div style="font-size: 0.8rem; color: #94a3b8;">
+                <i class="fas fa-info-circle"></i>
+                <span id="hint-text">Drag handle to move slits. Observe constructive (bright) vs destructive (dark)
+                    interference.</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // CONFIG
+        const SIM_RES_DIVISOR = 4; // Render every 4th pixel for performance
+        let MODE = 'wave'; // 'wave' or 'particle'
+
+        // DOM ELEMENTS
+        const simCanvas = document.getElementById('sim-canvas');
+        const graphCanvas = document.getElementById('graph-canvas');
+        const simCtx = simCanvas.getContext('2d', { alpha: false }); // Opt for speed
+        const graphCtx = graphCanvas.getContext('2d');
+        const fpsEl = document.getElementById('fps-counter');
+
+        // STATE
+        let time = 0;
+        let running = true;
+        let width, height;
+        let gw, gh; // Graph dimensions
+
+        // Physics Params
+        let wavelength = 50; // px
+        let frequency = 0.1;
+        let slitDist = 40; // px from center (total sep = 2*slitDist)
+        let barrierX = 0; // Calculated in resize
+
+        let colorHue = 190; // Cyan default
+
+        // Particle System
+        const particles = [];
+        const screenHits = new Array(1000).fill(0); // Bucket histogram for graph
+        let totalHits = 0;
+
+        // UI Handlers
+        const wvSlider = document.getElementById('wavelength-slider');
+        const sepSlider = document.getElementById('separation-slider');
+        const wvDisplay = document.getElementById('wv-val');
+        const sepDisplay = document.getElementById('sep-val');
+
+        function setMode(m) {
+            MODE = m;
+            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+
+            // Clear Particles
+            if (MODE === 'particle') {
+                particles.length = 0;
+                screenHits.fill(0);
+                totalHits = 0;
+            }
+            document.getElementById('mode-status').innerText = MODE === 'wave' ? "Coherent Wave" : "Single Photon Stream";
+            document.getElementById('hint-text').innerText = MODE === 'wave'
+                ? "Waves superimpose to create bright fringes."
+                : "Particles land individually. Interference emerges over time.";
+        }
+
+        wvSlider.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value);
+            // Map 400-700nm slider to simulation params
+            // 400nm (Violet) -> Short Wavelength
+            // 700nm (Red) -> Long Wavelength
+            const pct = (val - 400) / 300;
+            wavelength = 30 + (pct * 60); // 30px to 90px
+            frequency = 6 / wavelength;
+
+            // Color Mapping
+            // Violet (270) -> Blue -> Cyan -> Green -> Yellow -> Red (0)
+            colorHue = 270 - (pct * 270);
+
+            wvDisplay.innerText = val + "nm";
+        });
+
+        sepSlider.addEventListener('input', (e) => {
+            slitDist = parseInt(e.target.value);
+            sepDisplay.innerText = (slitDist * 2 / wavelength).toFixed(1) + "λ";
+        });
+
+        // RESIZE
+        function resize() {
+            width = simCanvas.width = simCanvas.clientWidth;
+            height = simCanvas.height = simCanvas.clientHeight;
+            gw = graphCanvas.width = graphCanvas.clientWidth;
+            gh = graphCanvas.height = graphCanvas.clientHeight;
+
+            barrierX = width * 0.2; // Barrier at 20% width
+
+            // Reset graph buckets
+            if (gh > 0) screenHits.length = gh;
+            screenHits.fill(0);
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // RENDER LOOP
+        let lastTime = 0;
+        function loop(timestamp) {
+            const dt = timestamp - lastTime;
+            lastTime = timestamp;
+            fpsEl.innerText = Math.round(1000 / dt);
+
+            if (MODE === 'wave') {
+                renderWaveMode();
+            } else {
+                renderParticleMode();
+            }
+            renderGraph();
+            simCtx.drawImage(simCanvas, 0, 0); // No-op, just to keep structure if needed
+
+            time += 1;
+            requestAnimationFrame(loop);
+        }
+        requestAnimationFrame(loop);
+
+
+        // --- WAVE MODE ---
+        // Optimization: Create an Offscreen buffer for the heatmap
+        const offCanvas = document.createElement('canvas');
+        const offCtx = offCanvas.getContext('2d');
+
+        function renderWaveMode() {
+            // Downscale for performance
+            const w = Math.floor(width / SIM_RES_DIVISOR);
+            const h = Math.floor(height / SIM_RES_DIVISOR);
+
+            if (offCanvas.width !== w || offCanvas.height !== h) {
+                offCanvas.width = w;
+                offCanvas.height = h;
+            }
+
+            const imgData = offCtx.createImageData(w, h);
+            const data = imgData.data;
+
+            // Precalc constants
+            const slit1Y = (h / 2) - (slitDist / SIM_RES_DIVISOR);
+            const slit2Y = (h / 2) + (slitDist / SIM_RES_DIVISOR);
+            const bx = barrierX / SIM_RES_DIVISOR;
+            const k = (2 * Math.PI) / (wavelength / SIM_RES_DIVISOR);
+            const omega = frequency; // Phase speed
+            const phase = time * 0.1;
+
+            // Loop pixels
+            let ptr = 0;
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    let amp = 0;
+
+                    if (x < bx) {
+                        // Left of barrier: Plane wave from left source
+                        // Simplified: Source is far left
+                        amp = Math.sin(x * k * 0.5 - phase);
+                    } else {
+                        // Right of barrier: Interference
+                        const dx = x - bx;
+                        const dy1 = y - slit1Y;
+                        const dy2 = y - slit2Y;
+
+                        const d1 = Math.sqrt(dx * dx + dy1 * dy1);
+                        const d2 = Math.sqrt(dx * dx + dy2 * dy2);
+
+                        // Falloff (1/r) approsimation for realism
+                        const falloff = 10 / (Math.sqrt(dx) + 1);
+
+                        const wave1 = Math.sin(d1 * k - phase);
+                        const wave2 = Math.sin(d2 * k - phase);
+
+                        amp = (wave1 + wave2) * 0.5; // Avg
+
+                        // Apply Mask for barrier shadow (rough)
+                        // If y is between slits? No, Huygens implies omni. 
+                        // But strictly behind barrier wall is blocked.
+                        // We simulate point sources at slits, so this is handled naturally by d1/d2 origin.
+                    }
+
+                    // Map -1..1 to Color Intensity
+                    // Constructive (1) -> Bright Color
+                    // Destructive (0) -> Black
+                    // Trough (-1) -> Also Bright (Energy is Amp^2)
+
+                    const intensity = amp * amp; // Energy is square of amplitude
+
+                    // Color Logic based on hue
+                    // We want: Black -> Color -> White
+                    const val = Math.min(255, intensity * 255 * 1.5); // Boost gain
+
+                    // Simple grayscale for speed, or tint?
+                    // Let's do Tint.
+                    // HSL to RGB is expensive per pixel. Use simplified tint.
+
+                    // R, G, B
+                    // If hue is cyan (180): High G, B. Low R.
+                    // If hue is red (0): High R. Low G, B.
+
+                    // Quick-n-dirty Color Map
+                    let r = 0, g = 0, b = 0;
+                    if (colorHue > 200) { // Violet/Blue
+                        r = val * 0.5; g = val * 0.2; b = val;
+                    } else if (colorHue > 140) { // Cyan/Green
+                        r = val * 0.1; g = val; b = val * 0.8;
+                    } else { // Red/Yellow
+                        r = val; g = val * 0.5; b = val * 0.1;
+                    }
+
+                    // Barrier Line
+                    if (Math.abs(x - bx) < 1) {
+                        // Slit gaps
+                        if (Math.abs(y - slit1Y) > 2 && Math.abs(y - slit2Y) > 2) {
+                            r = 50; g = 50; b = 70; // Grey wall
+                        }
+                    }
+
+                    data[ptr++] = r;
+                    data[ptr++] = g;
+                    data[ptr++] = b;
+                    data[ptr++] = 255;
+                }
+            }
+
+            offCtx.putImageData(imgData, 0, 0);
+
+            // Scale up to main canvas
+            simCtx.imageSmoothingEnabled = false; // Pixelated look
+            simCtx.drawImage(offCanvas, 0, 0, width, height);
+
+            // Draw Barrier Overlay (Crisp)
+            simCtx.fillStyle = '#1e293b';
+            simCtx.fillRect(barrierX - 2, 0, 4, height);
+            // Cut slits
+            simCtx.clearRect(barrierX - 2, (height / 2) - slitDist - 5, 4, 10);
+            simCtx.clearRect(barrierX - 2, (height / 2) + slitDist - 5, 4, 10);
+        }
+
+
+        // --- PARTICLE MODE ---
+        function renderParticleMode() {
+            simCtx.fillStyle = '#0F172A';
+            simCtx.fillRect(0, 0, width, height);
+
+            // 1. Emit Photons
+            // Source is far left, but we just spawn at slits for simplicity of Huygens
+            if (running) {
+                for (let i = 0; i < 5; i++) { // 5 per frame
+                    const slit = Math.random() > 0.5 ? -1 : 1;
+                    const yStart = (height / 2) + (slit * slitDist) + (Math.random() - 0.5) * 5;
+
+                    // Angle Distribution determines interference
+                    // In reality, this is complex (Feynman path integral).
+                    // We cheat: We intentionally bias the angle based on the Wave Function Probability!
+
+                    // We pick a random target Y on screen
+                    // Check the Wave Intensity at that spot. 
+                    // Reject if random > intensity (Rejection Sampling)
+                    let targetY, valid = false;
+                    let tryCount = 0;
+
+                    while (!valid && tryCount < 10) {
+                        targetY = Math.random() * height;
+
+                        // Calculate Wave Intensity at (width, targetY)
+                        const dx = width - barrierX;
+                        const dy1 = targetY - ((height / 2) - slitDist);
+                        const dy2 = targetY - ((height / 2) + slitDist);
+                        const d1 = Math.sqrt(dx * dx + dy1 * dy1);
+                        const d2 = Math.sqrt(dx * dx + dy2 * dy2);
+                        const k = (2 * Math.PI) / wavelength;
+
+                        // Phase diff
+                        const theta = d2 - d1;
+                        const amp = Math.cos(k * theta / 2); // Interference term
+                        const prob = amp * amp;
+
+                        if (Math.random() < prob) valid = true;
+                        tryCount++;
+                    }
+
+                    const angle = Math.atan2(targetY - yStart, width - barrierX);
+
+                    particles.push({
+                        x: barrierX,
+                        y: yStart,
+                        vx: Math.cos(angle) * 5,
+                        vy: Math.sin(angle) * 5,
+                        life: 200
+                    });
+                }
+            }
+
+            // Draw Barrier
+            simCtx.fillStyle = '#334155';
+            simCtx.fillRect(barrierX - 2, 0, 4, height);
+            simCtx.clearRect(barrierX - 2, (height / 2) - slitDist - 5, 4, 10);
+            simCtx.clearRect(barrierX - 2, (height / 2) + slitDist - 5, 4, 10);
+
+            // Update & Draw Particles
+            simCtx.fillStyle = `hsl(${colorHue}, 100%, 70%)`;
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+
+                simCtx.fillRect(p.x, p.y, 2, 2);
+
+                // Hit Screen
+                if (p.x >= width) {
+                    // Register hit
+                    const buckets = screenHits.length;
+                    const bin = Math.floor((p.y / height) * buckets);
+                    if (bin >= 0 && bin < buckets) {
+                        screenHits[bin]++;
+                        totalHits++;
+                    }
+                    particles.splice(i, 1);
+                } else if (p.life-- <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        // --- GRAPH RENDER ---
+        function renderGraph() {
+            graphCtx.clearRect(0, 0, gw, gh);
+
+            // Draw Axis
+            graphCtx.strokeStyle = '#475569';
+            graphCtx.beginPath();
+            graphCtx.moveTo(0, 0); graphCtx.lineTo(0, gh);
+            graphCtx.stroke();
+
+            graphCtx.strokeStyle = `hsl(${colorHue}, 100%, 70%)`;
+            graphCtx.lineWidth = 2;
+            graphCtx.beginPath();
+
+            // Bucket Y -> Graph X
+            // If Wave Mode: Analytic calculation
+            // If Particle Mode: Histogram data
+
+            if (MODE === 'wave') {
+                for (let y = 0; y < gh; y += 2) {
+                    const dx = width - barrierX; // distance from barrier to screen
+                    // We simulate the detector is AT the screen edge (width)
+                    // slit1Y, slit2Y
+                    const slit1Y = (height / 2) - slitDist;
+                    const slit2Y = (height / 2) + slitDist;
+
+                    // We need to map y-coord of graph to scene y-coord
+                    // assuming 1:1 mapping if canvas sizes match
+                    const sceneY = (y / gh) * height;
+
+                    const dy1 = sceneY - slit1Y;
+                    const dy2 = sceneY - slit2Y;
+                    const d1 = Math.sqrt(dx * dx + dy1 * dy1);
+                    const d2 = Math.sqrt(dx * dx + dy2 * dy2);
+
+                    const k = (2 * Math.PI) / wavelength;
+                    // Superposition
+                    // A = sin(k*d1) + sin(k*d2)
+                    // But we want Intensity envelope: 4 * cos^2(k(r1-r2)/2)
+                    const pathDiff = d2 - d1;
+                    const val = Math.cos((k * pathDiff) / 2);
+                    const intensity = val * val;
+
+                    const barLen = intensity * (gw * 0.9);
+
+                    if (y === 0) graphCtx.moveTo(barLen, y);
+                    else graphCtx.lineTo(barLen, y);
+                }
+                graphCtx.stroke();
+
+                // Fill
+                graphCtx.lineTo(0, gh);
+                graphCtx.lineTo(0, 0);
+                graphCtx.fillStyle = `hsla(${colorHue}, 100%, 70%, 0.2)`;
+                graphCtx.fill();
+            }
+            else {
+                // Particle Histogram with smoothing
+                graphCtx.beginPath();
+                const smoothing = 5;
+                const max = Math.max(10, ...screenHits);
+
+                for (let y = 0; y < gh; y++) {
+                    // Avg around y
+                    let sum = 0;
+                    let count = 0;
+                    for (let j = -smoothing; j <= smoothing; j++) {
+                        const idx = Math.floor((y / gh) * screenHits.length) + j;
+                        if (idx >= 0 && idx < screenHits.length) {
+                            sum += screenHits[idx];
+                            count++;
+                        }
+                    }
+                    const val = (sum / count) / max; // Normalized 0-1
+                    const barLen = val * (gw * 0.9);
+
+                    if (y === 0) graphCtx.moveTo(barLen, y);
+                    else graphCtx.lineTo(barLen, y);
+                }
+                graphCtx.stroke();
+                graphCtx.fillStyle = `hsla(${colorHue}, 100%, 70%, 0.2)`;
+                graphCtx.fill();
+            }
+        }
+
+    </script>
+</body>
+
+</html>

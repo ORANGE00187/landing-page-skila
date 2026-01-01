@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skila.ai | States of Matter</title>
+    <!-- FONTS -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0F172A;
+            /* Slate 900 */
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+            color: white;
+        }
+
+        #sim-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* UI */
+        .ui-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        /* HUD */
+        .hud-panel {
+            position: absolute;
+            top: 40px;
+            right: 40px;
+            width: 320px;
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 24px;
+            pointer-events: auto;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .graph-container {
+            width: 100%;
+            height: 180px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-label {
+            font-size: 12px;
+            color: #94A3B8;
+            margin-bottom: 8px;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* SLIDER styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #fff;
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 0 10px white;
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #334155;
+            border-radius: 2px;
+        }
+
+        /* Temp Slider Special */
+        #temp-slider::-webkit-slider-runnable-track {
+            background: linear-gradient(to right, #3B82F6, #EF4444);
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="sim-canvas"></canvas>
+
+    <div class="ui-layer">
+        <div class="hud-panel">
+            <div class="flex items-center justify-between mb-6">
+                <div class="text-xs text-cyan-400 font-bold uppercase tracking-widest">
+                    <i class="fas fa-snowflake mr-2"></i>Cryo-Lab
+                </div>
+                <div id="state-indicator"
+                    class="text-xs font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30">
+                    LIQUID</div>
+            </div>
+
+            <div class="graph-container">
+                <canvas id="phase-graph" width="270" height="180"></canvas>
+            </div>
+
+            <div class="control-group">
+                <div class="control-label">
+                    <span>Temperature</span>
+                    <span id="temp-display" class="text-white">120 K</span>
+                </div>
+                <input type="range" id="temp-slider" min="10" max="600" value="120">
+            </div>
+
+            <div class="control-group">
+                <div class="control-label">
+                    <span>Pressure (Piston)</span>
+                    <span id="press-display" class="text-white">1.0 atm</span>
+                </div>
+                <input type="range" id="press-slider" min="0" max="100" value="20">
+            </div>
+
+            <div class="text-[10px] text-slate-500 mt-4 leading-relaxed">
+                <i class="fas fa-info-circle mr-1"></i>
+                Particles interact via <b>Lennard-Jones Potential</b>.
+                Low temp forms hexagonal ice lattices. High temp breaks bonds into gas.
+            </div>
+        </div>
+    </div>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        /**
+         * SKILA.ai - States of Matter Simulator
+         * - Lennard-Jones Potential Force Calculation
+         * - Phase Transition Visualization (Color/Glow)
+         * - Movable Piston
+         */
+
+        const canvas = document.getElementById('sim-canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+        let PARTICLES = [];
+
+        // Sim Paramters
+        let TEMP = 120; // Kelvin
+        let PISTON_Y = 0; // Top of container
+        let CONTAINER = { x: 0, y: 0, w: 0, h: 0 };
+
+        // Lennard-Jones Params
+        const SIGMA = 25; // Particle size effectively
+        const EPSILON = 50; // Interaction strength ~ forces
+        const R_CUTOFF = SIGMA * 3; // Optimization cutoff
+
+        // UI
+        const stateInd = document.getElementById('state-indicator');
+
+        class Particle {
+            constructor(x, y) {
+                this.x = x; this.y = y;
+                this.vx = (Math.random() - 0.5);
+                this.vy = (Math.random() - 0.5);
+                this.fx = 0; this.fy = 0; // Force accumulator
+                this.r = 6;
+                this.neighbors = 0; // For state detection
+            }
+
+            draw(ctx) {
+                // Color based on state/neighbors
+                // High neighbors = Solid/Liquid (Blue/White)
+                // Low neighbors = Gas (Mist)
+
+                let hue, sat, light, alpha;
+
+                if (this.neighbors >= 4 && TEMP < 150) {
+                    // Solid (Ice)
+                    hue = 190; sat = 90; light = 90; alpha = 1;
+                } else if (this.neighbors >= 2) {
+                    // Liquid
+                    hue = 210; sat = 90; light = 60; alpha = 0.9;
+                } else {
+                    // Gas
+                    hue = 200; sat = 20; light = 90; alpha = 0.6;
+                }
+
+                if (TEMP > 400) { hue = 0; sat = 80; light = 70; } // Plasma-ish heat
+
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+
+                // Refractive Look
+                const grad = ctx.createRadialGradient(this.x - 2, this.y - 2, 1, this.x, this.y, this.r);
+                grad.addColorStop(0, `hsla(${hue}, ${sat}%, 100%, ${alpha})`);
+                grad.addColorStop(1, `hsla(${hue}, ${sat}%, ${light}%, ${alpha})`);
+
+                ctx.fillStyle = grad;
+                ctx.fill();
+            }
+
+            drawBonds(ctx, neighborsList) {
+                // "Crystallization Glow"
+                if (TEMP > 180) return; // Only visible in solid/cold liquid
+
+                neighborsList.forEach(p2 => {
+                    const dx = this.x - p2.x;
+                    const dy = this.y - p2.y;
+                    const d = Math.sqrt(dx * dx + dy * dy);
+                    if (d < SIGMA * 1.2) {
+                        ctx.beginPath();
+                        ctx.moveTo(this.x, this.y);
+                        ctx.lineTo(p2.x, p2.y);
+                        ctx.strokeStyle = `rgba(255, 255, 255, ${0.4 * (1 - d / (SIGMA * 1.2))})`;
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                    }
+                });
+            }
+        }
+
+        // --- PHYSICS ENGINE (Lennard-Jones) ---
+        function updatePhysics() {
+            // Reset Forces
+            PARTICLES.forEach(p => { p.fx = 0; p.fy = 0; p.neighbors = 0; });
+
+            // Interaction O(N^2)
+            for (let i = 0; i < PARTICLES.length; i++) {
+                for (let j = i + 1; j < PARTICLES.length; j++) {
+                    const p1 = PARTICLES[i];
+                    const p2 = PARTICLES[j];
+
+                    const dx = p2.x - p1.x;
+                    const dy = p2.y - p1.y;
+                    const dSq = dx * dx + dy * dy;
+
+                    if (dSq < R_CUTOFF * R_CUTOFF && dSq > 0.1) {
+                        const d = Math.sqrt(dSq);
+
+                        // LJ Force Magnitude
+                        // F = 24*EPS [ 2(SIG/r)^13 - (SIG/r)^7 ] / SIG
+                        // Simplified Force calculation to avoid pow13 directly
+                        const sr = SIGMA / d;
+                        const sr6 = Math.pow(sr, 6);
+                        const sr12 = sr6 * sr6;
+                        const forceMag = 24 * EPSILON * (2 * sr12 - sr6) / d;
+
+                        // Clamp crazy forces at very short range
+                        const fVal = Math.min(Math.max(forceMag, -500), 500);
+
+                        const fx = fVal * (dx / d);
+                        const fy = fVal * (dy / d);
+
+                        p1.fx -= fx; p1.fy -= fy;
+                        p2.fx += fx; p2.fy += fy;
+
+                        // Neighbor count for visual
+                        if (d < SIGMA * 1.5) {
+                            p1.neighbors++; p2.neighbors++;
+                        }
+                    }
+                }
+            }
+
+            // Integration (Velocity Verlet approx) + Thermostat
+            const dt = 0.05; // Time step
+            const targetSpeedSq = TEMP * 0.05; // Scaling factor
+
+            PARTICLES.forEach(p => {
+                // Apply Force
+                p.vx += p.fx * dt;
+                p.vy += p.fy * dt;
+
+                // Thermostat (Berendsen-like scaling)
+                // Nudge velocities towards target TEMP
+                const speedSq = p.vx * p.vx + p.vy * p.vy;
+                if (Math.random() < 0.1) { // Apply stochastically to mix
+                    const scale = Math.sqrt(targetSpeedSq / (speedSq + 0.1));
+                    // Soft application
+                    p.vx = p.vx * 0.9 + p.vx * scale * 0.1;
+                    p.vy = p.vy * 0.9 + p.vy * scale * 0.1;
+                }
+
+                // Gravity (Small)
+                p.vy += 0.05;
+
+                // Move
+                p.x += p.vx;
+                p.y += p.vy;
+
+                // Walls (Container + Piston)
+                const damping = 0.5; // lose energy on wall hit
+
+                // Floor
+                if (p.y > CONTAINER.y + CONTAINER.h - p.r) {
+                    p.y = CONTAINER.y + CONTAINER.h - p.r;
+                    p.vy *= -1 * damping;
+                }
+                // Ceiling (Piston)
+                if (p.y < PISTON_Y + p.r) {
+                    p.y = PISTON_Y + p.r;
+                    p.vy *= -1 * damping;
+                    // Add some heat from compression (Work)
+                    p.vx += (Math.random() - 0.5);
+                }
+                // Left
+                if (p.x < CONTAINER.x + p.r) {
+                    p.x = CONTAINER.x + p.r;
+                    p.vx *= -1 * damping;
+                }
+                // Right
+                if (p.x < CONTAINER.x || p.x > CONTAINER.x + CONTAINER.w - p.r) {
+                    p.x = CONTAINER.x + CONTAINER.w - p.r;
+                    p.vx *= -1 * damping;
+                }
+            });
+        }
+
+        // --- GRAPH ENGINE ---
+        const gCan = document.getElementById('phase-graph');
+        const gCtx = gCan.getContext('2d');
+
+        function drawGraph() {
+            gCtx.clearRect(0, 0, 270, 180);
+
+            // Axes
+            gCtx.strokeStyle = '#475569'; gCtx.lineWidth = 2;
+            gCtx.beginPath();
+            gCtx.moveTo(30, 10); gCtx.lineTo(30, 160); gCtx.lineTo(260, 160);
+            gCtx.stroke();
+
+            // Phase Lines (Approximate water-like)
+            gCtx.strokeStyle = '#94A3B8'; gCtx.lineWidth = 1; gCtx.setLineDash([2, 2]);
+
+            // Solid/Liquid Line
+            gCtx.beginPath(); gCtx.moveTo(80, 160); gCtx.lineTo(100, 10); gCtx.stroke();
+
+            // Liquid/Gas Line
+            gCtx.beginPath(); gCtx.moveTo(80, 160); gCtx.quadraticCurveTo(150, 100, 260, 60); gCtx.stroke();
+            gCtx.setLineDash([]);
+
+            // Labels
+            gCtx.fillStyle = '#64748B'; gCtx.font = '10px Inter';
+            gCtx.fillText("SOLID", 45, 100);
+            gCtx.fillText("LIQUID", 120, 50);
+            gCtx.fillText("GAS", 200, 130);
+            gCtx.fillText("Temp (T)", 220, 175);
+            gCtx.save();
+            gCtx.translate(15, 80); gCtx.rotate(-Math.PI / 2);
+            gCtx.fillText("Pressure (P)", 0, 0);
+            gCtx.restore();
+
+            // Live Dot
+            // Map Temp (X) and Pressure (Y)
+            // Temp 10-600 -> x 30-260
+            const dotX = 30 + ((TEMP / 600) * 230);
+
+            // Pressure is inverse of Volume approx
+            const vol = (CONTAINER.y + CONTAINER.h) - PISTON_Y;
+            const press = 1000 / vol; // simplified
+            // Map Press -> Y (inverted)
+            const dotY = 160 - Math.min(150, press * 15);
+
+            gCtx.fillStyle = '#EF4444';
+            gCtx.shadowColor = '#EF4444'; gCtx.shadowBlur = 10;
+            gCtx.beginPath(); gCtx.arc(dotX, dotY, 4, 0, Math.PI * 2); gCtx.fill();
+            gCtx.shadowBlur = 0;
+
+            // Update Text Label
+            let state = "GAS";
+            if (dotX < 80) state = "SOLID"; // rough region
+            else if (dotY < 160 - (dotX / 2)) state = "LIQUID"; // rough region collision
+
+            // Override with calculation
+            const avgNeighbors = PARTICLES.reduce((acc, p) => acc + p.neighbors, 0) / (PARTICLES.length || 1);
+            if (avgNeighbors > 3.5) state = "SOLID";
+            else if (avgNeighbors > 1.5) state = "LIQUID";
+            else state = "GAS";
+
+            stateInd.innerText = state;
+            if (state === "SOLID") stateInd.className = "text-xs font-bold text-white bg-cyan-500/20 px-2 py-1 rounded border border-cyan-500/30";
+            if (state === "LIQUID") stateInd.className = "text-xs font-bold text-white bg-blue-500/20 px-2 py-1 rounded border border-blue-500/30";
+            if (state === "GAS") stateInd.className = "text-xs font-bold text-white bg-slate-500/20 px-2 py-1 rounded border border-slate-500/30";
+        }
+
+        // --- MAIN LOOP ---
+        function loop() {
+            // Resize check
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+
+            // Container Dimensions (Centered)
+            CONTAINER.w = 500;
+            CONTAINER.h = 600;
+            CONTAINER.x = width / 2 - CONTAINER.w / 2;
+            CONTAINER.y = height / 2 - CONTAINER.h / 2 + 50;
+
+            // Draw Background
+            ctx.fillStyle = '#0F172A';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw Container - Back
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(CONTAINER.x, CONTAINER.y, CONTAINER.w, CONTAINER.h);
+
+            // Draw Piston
+            ctx.fillStyle = '#64748B';
+            ctx.fillRect(CONTAINER.x + 5, PISTON_Y - 20, CONTAINER.w - 10, 20);
+            ctx.fillStyle = '#475569'; // Rod
+            ctx.fillRect(width / 2 - 10, 0, 20, PISTON_Y - 20);
+
+            // Physics & Draw
+            updatePhysics();
+
+            // Bonds (Solid only)
+            if (TEMP < 180) {
+                for (let i = 0; i < PARTICLES.length; i++) {
+                    PARTICLES[i].drawBonds(ctx, PARTICLES.slice(i + 1)); // naive check
+                }
+            }
+
+            PARTICLES.forEach(p => p.draw(ctx));
+
+            // Glass Front
+            ctx.fillStyle = 'rgba(148, 163, 184, 0.1)';
+            ctx.fillRect(CONTAINER.x, CONTAINER.y, CONTAINER.w, CONTAINER.h);
+            ctx.strokeStyle = '#334155'; ctx.lineWidth = 4;
+            ctx.strokeRect(CONTAINER.x, CONTAINER.y, CONTAINER.w, CONTAINER.h);
+
+            // Reflection
+            ctx.fillStyle = 'rgba(255,255,255,0.05)';
+            ctx.beginPath();
+            ctx.moveTo(CONTAINER.x, CONTAINER.y);
+            ctx.lineTo(CONTAINER.x + 80, CONTAINER.y);
+            ctx.lineTo(CONTAINER.x, CONTAINER.y + 80);
+            ctx.fill();
+
+            // Graph Updates
+            drawGraph();
+
+            requestAnimationFrame(loop);
+        }
+
+        // --- CONTROLS ---
+        const tempSlide = document.getElementById('temp-slider');
+        const pressSlide = document.getElementById('press-slider');
+
+        tempSlide.addEventListener('input', (e) => {
+            TEMP = parseInt(e.target.value);
+            document.getElementById('temp-display').innerText = TEMP + " K";
+        });
+
+        pressSlide.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value); // 0 (top) to 100 (crush)
+            // Piston range: CONTAINER.y to CONTAINER.y + CONTAINER.h - 100
+            const range = CONTAINER.h - 150;
+            const targetY = CONTAINER.y + (val / 100) * range;
+            PISTON_Y = targetY;
+            document.getElementById('press-display').innerText = (1 + (val / 20)).toFixed(1) + " atm";
+        });
+
+        // Click Heat
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            // Repel / Heat
+            PARTICLES.forEach(p => {
+                const dx = p.x - x;
+                const dy = p.y - y;
+                const d = Math.sqrt(dx * dx + dy * dy);
+                if (d < 100) {
+                    p.vx += (dx / d) * 5;
+                    p.vy += (dy / d) * 5;
+                }
+            });
+        });
+
+        // Init
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+        CONTAINER.w = 500;
+        CONTAINER.h = 600;
+        CONTAINER.x = width / 2 - CONTAINER.w / 2;
+        CONTAINER.y = height / 2 - CONTAINER.h / 2 + 50;
+        PISTON_Y = CONTAINER.y; // Start at top
+
+        // Spawn - Lattice init to help Solids
+        const cols = 12;
+        const rows = 12;
+        const spacing = SIGMA * 1.1;
+        const startX = CONTAINER.x + 50;
+        const startY = CONTAINER.y + 300;
+
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                // Staggered honeycomb
+                const offX = (r % 2 === 0) ? 0 : spacing / 2;
+                PARTICLES.push(new Particle(startX + c * spacing + offX, startY + r * spacing * 0.866));
+            }
+        }
+
+        loop();
+
+    </script>
+</body>
+
+</html>

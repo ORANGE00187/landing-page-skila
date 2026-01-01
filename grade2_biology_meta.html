@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Life Cycle</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #fff;
+            font-family: 'Fredoka', sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .ui {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translate(-50%, 0);
+            width: 80%;
+            max-width: 600px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 20px;
+            border-radius: 20px;
+            text-align: center;
+        }
+
+        input[type=range] {
+            width: 100%;
+        }
+
+        .label {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4b5563;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="ui">
+        <input type="range" id="time-slider" min="0" max="100" value="0">
+        <div class="label" id="label">Egg Stage 🥚</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const label = document.getElementById('label');
+
+        let width, height;
+        let TIME = 0; // 0 to 100
+
+        document.getElementById('time-slider').addEventListener('input', e => {
+            TIME = parseInt(e.target.value);
+            updateLabel();
+        });
+
+        function updateLabel() {
+            if (TIME < 30) label.innerText = "Egg Stage 🥚";
+            else if (TIME < 60) label.innerText = "Caterpillar Stage 🐛";
+            else if (TIME < 90) label.innerText = "Chrysalis Stage 🧶";
+            else label.innerText = "Butterfly Stage 🦋";
+        }
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function loop() {
+            // Bg changes with time (Night -> Day)
+            const hour = (TIME / 100) * 12 + 6; // 6am to 6pm approx? Or Night -> Day
+            // 0 = Night. 100 = Day.
+
+            let bg = ctx.createLinearGradient(0, 0, 0, height);
+            if (TIME < 30) {
+                bg.addColorStop(0, '#0f172a'); bg.addColorStop(1, '#1e293b'); // Night
+            } else if (TIME < 60) {
+                bg.addColorStop(0, '#bae6fd'); bg.addColorStop(1, '#e0f2fe'); // Morning
+            } else {
+                bg.addColorStop(0, '#7dd3fc'); bg.addColorStop(1, '#38bdf8'); // Day
+            }
+            ctx.fillStyle = bg;
+            ctx.fillRect(0, 0, width, height);
+
+            const cx = width / 2;
+            const cy = height / 2;
+
+            // Draw Leaf Base (common)
+            ctx.fillStyle = '#4ade80';
+            ctx.beginPath();
+            ctx.ellipse(cx, cy + 100, 150, 60, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // --- MORPHING DRAWING ---
+
+            if (TIME < 30) {
+                // EGG
+                // Pulsing
+                const scale = 1 + Math.sin(Date.now() * 0.005) * 0.05;
+                ctx.fillStyle = '#fffbeb';
+                ctx.beginPath();
+                ctx.ellipse(cx, cy + 80, 20 * scale, 25 * scale, 0, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (TIME < 60) {
+                // CATERPILLAR
+                // Segments
+                const t = (TIME - 30) / 30; // 0 to 1 progress
+                const size = 20 + t * 10;
+
+                // Walking animation
+                const walk = Math.sin(Date.now() * 0.01) * 10;
+
+                ctx.fillStyle = '#84cc16';
+                for (let i = -2; i <= 2; i++) {
+                    ctx.beginPath();
+                    ctx.arc(cx + i * 25 - walk, cy + 80 - Math.abs(Math.sin(Date.now() * 0.01 + i) * 5), size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                // Head
+                ctx.fillStyle = '#ef4444';
+                ctx.beginPath();
+                ctx.arc(cx + 60 - walk, cy + 70, size, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (TIME < 90) {
+                // CHRYSALIS
+                const t = (TIME - 60) / 30;
+                ctx.fillStyle = '#a16207'; // Brownish/Green
+                ctx.beginPath();
+                // Hanging from a branch? Or on leaf. Let's do on leaf but vertical.
+                // Draw Silk
+                ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(cx, cy - 50); ctx.lineTo(cx, cy + 50); ctx.stroke();
+
+                ctx.fillStyle = '#ecfccb';
+                ctx.beginPath();
+                ctx.ellipse(cx, cy + 50, 30, 60, 0, 0, Math.PI * 2);
+                ctx.fill();
+            } else {
+                // BUTTERFLY
+                // Follow mouse slightly
+                // Flapping
+                const flap = Math.abs(Math.sin(Date.now() * 0.01));
+
+                ctx.save();
+                ctx.translate(cx, cy - 50);
+
+                // Wings
+                ctx.fillStyle = '#f472b6';
+                ctx.beginPath();
+                ctx.ellipse(-30, 0, 60 * flap, 80, -0.5, 0, Math.PI * 2); // L
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.ellipse(30, 0, 60 * flap, 80, 0.5, 0, Math.PI * 2); // R
+                ctx.fill();
+
+                // Body
+                ctx.fillStyle = '#000';
+                ctx.beginPath(); ctx.ellipse(0, 0, 10, 40, 0, 0, Math.PI * 2); ctx.fill();
+
+                ctx.restore();
+            }
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+    </script>
+</body>
+
+</html>

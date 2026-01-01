@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skila.ai | Chemistry Lab</title>
+    <!-- FONTS -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0F172A;
+            /* Slate 900 */
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+            color: white;
+        }
+
+        #sim-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* UI */
+        .ui-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        /* HUD */
+        .hud-panel {
+            position: absolute;
+            top: 40px;
+            left: 40px;
+            width: 280px;
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            pointer-events: auto;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            font-size: 13px;
+            color: #94A3B8;
+        }
+
+        .stat-val {
+            font-family: 'JetBrains Mono';
+            color: white;
+            font-weight: 700;
+        }
+
+        /* PALETTE */
+        .palette {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 16px;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 16px 24px;
+            border-radius: 24px;
+            backdrop-filter: blur(10px);
+            pointer-events: auto;
+        }
+
+        .atom-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+            cursor: grab;
+            transition: transform 0.2s, box-shadow 0.2s;
+            position: relative;
+        }
+
+        .atom-btn:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .atom-btn:active {
+            cursor: grabbing;
+            transform: scale(0.95);
+        }
+
+        /* Atom Colors */
+        .btn-h {
+            background: radial-gradient(circle at 30% 30%, #FFFFFF, #94A3B8);
+            color: #0F172A;
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+        }
+
+        .btn-o {
+            background: radial-gradient(circle at 30% 30%, #EF4444, #991B1B);
+            color: white;
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-c {
+            background: radial-gradient(circle at 30% 30%, #475569, #1E293B);
+            color: white;
+            box-shadow: 0 0 15px rgba(71, 85, 105, 0.3);
+        }
+
+        .btn-n {
+            background: radial-gradient(circle at 30% 30%, #3B82F6, #1E40AF);
+            color: white;
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.3);
+        }
+
+        /* Nitrogen? Sodium? Let's do Na */
+        .btn-na {
+            background: radial-gradient(circle at 30% 30%, #A855F7, #6B21A8);
+            color: white;
+            box-shadow: 0 0 15px rgba(168, 85, 247, 0.3);
+        }
+
+        .btn-cl {
+            background: radial-gradient(circle at 30% 30%, #10B981, #065F46);
+            color: white;
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
+        }
+
+        .temp-ctrl {
+            position: absolute;
+            right: 40px;
+            top: 50%;
+            transform: translateY(-50%);
+            height: 200px;
+            width: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            pointer-events: auto;
+        }
+
+        .temp-thumb {
+            width: 24px;
+            height: 24px;
+            background: white;
+            border-radius: 50%;
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            cursor: ns-resize;
+            box-shadow: 0 0 10px white;
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="sim-canvas"></canvas>
+
+    <div class="ui-layer">
+
+        <div class="hud-panel">
+            <div class="text-xs text-rose-500 font-bold mb-4 uppercase tracking-widest">
+                <i class="fas fa-flask mr-2"></i>Molecular Reactor
+            </div>
+            <div class="stat-row">
+                <span>Total Atoms</span>
+                <span class="stat-val" id="atom-count">0</span>
+            </div>
+            <div class="stat-row">
+                <span>System Temp</span>
+                <span class="stat-val text-amber-500" id="temp-val">300 K</span>
+            </div>
+            <div class="mt-4 pt-4 border-t border-slate-700 text-[10px] text-slate-400">
+                Drag atoms to bond. Pull to break.
+            </div>
+        </div>
+
+        <div class="palette">
+            <div class="atom-btn btn-h" onmousedown="startSpawn('H')">H</div>
+            <div class="atom-btn btn-o" onmousedown="startSpawn('O')">O</div>
+            <div class="atom-btn btn-c" onmousedown="startSpawn('C')">C</div>
+            <div class="atom-btn btn-na" onmousedown="startSpawn('Na')">Na</div>
+            <div class="atom-btn btn-cl" onmousedown="startSpawn('Cl')">Cl</div>
+        </div>
+
+        <div class="temp-ctrl">
+            <div class="temp-thumb" id="temp-thumb"></div>
+        </div>
+
+    </div>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        /**
+         * SKILA.ai - Atomic Bonding Simulator
+         * - Valence Shell Logic
+         * - Spring Physics for Bonds
+         * - Electrostatics
+         */
+
+        const canvas = document.getElementById('sim-canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+        let ATOMS = [];
+        let BONDS = [];
+        let TEMP = 300; // Kelvin
+
+        // --- ATOM DEFINITIONS ---
+        const ELEMENTS = {
+            'H': { r: 20, m: 1, valence: 1, col: '#FFFFFF', glow: 'rgba(255,255,255,0.4)' },
+            'O': { r: 35, m: 16, valence: 2, col: '#EF4444', glow: 'rgba(239, 68, 68, 0.4)' },
+            'C': { r: 38, m: 12, valence: 4, col: '#475569', glow: 'rgba(71, 85, 105, 0.4)' },
+            'Na': { r: 45, m: 23, valence: 1, col: '#A855F7', glow: 'rgba(168, 85, 247, 0.4)', charge: 1 }, // Ionic +
+            'Cl': { r: 42, m: 35, valence: 1, col: '#10B981', glow: 'rgba(16, 185, 129, 0.4)', charge: -1 } // Ionic -
+        };
+
+        class Atom {
+            constructor(type, x, y) {
+                this.type = type;
+                this.x = x; this.y = y;
+                this.vx = (Math.random() - 0.5) * 2;
+                this.vy = (Math.random() - 0.5) * 2;
+
+                const def = ELEMENTS[type];
+                this.r = def.r;
+                this.m = def.m;
+                this.valence = def.valence;
+                this.col = def.col;
+                this.glow = def.glow;
+                this.charge = def.charge || 0;
+
+                this.bonds = []; // Connected atoms
+            }
+
+            update() {
+                // Temperature (Brownian)
+                const speed = TEMP / 5000;
+                this.vx += (Math.random() - 0.5) * speed;
+                this.vy += (Math.random() - 0.5) * speed;
+
+                // Wall Bounce
+                if (this.x < this.r) { this.x = this.r; this.vx *= -0.5; }
+                if (this.x > width - this.r) { this.x = width - this.r; this.vx *= -0.5; }
+                if (this.y < this.r) { this.y = this.r; this.vy *= -0.5; }
+                if (this.y > height - this.r) { this.y = height - this.r; this.vy *= -0.5; }
+
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Damping
+                this.vx *= 0.98;
+                this.vy *= 0.98;
+            }
+
+            draw(ctx) {
+                // Nucleus
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+
+                // Gradient
+                const g = ctx.createRadialGradient(this.x - this.r * 0.3, this.y - this.r * 0.3, this.r * 0.2, this.x, this.y, this.r);
+                g.addColorStop(0, '#FFFFFF'); // Shininess
+                g.addColorStop(0.3, this.col);
+                g.addColorStop(1, '#000000');
+
+                ctx.fillStyle = g;
+                ctx.fill();
+
+                // Glow (Electron Cloud)
+                ctx.shadowColor = this.col;
+                ctx.shadowBlur = 20;
+                ctx.strokeStyle = this.col;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+
+                // Symbol
+                ctx.fillStyle = this.type === 'H' ? '#0F172A' : 'white';
+                ctx.font = `bold ${this.r * 0.8}px Inter`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.type, this.x, this.y);
+            }
+        }
+
+        // --- PHYSICS ENGINE ---
+        function updatePhysics() {
+            // 1. Repulsion (Collisions) & Attraction (Bonding checks)
+            for (let i = 0; i < ATOMS.length; i++) {
+                for (let j = i + 1; j < ATOMS.length; j++) {
+                    const a1 = ATOMS[i];
+                    const a2 = ATOMS[j];
+                    const dx = a2.x - a1.x;
+                    const dy = a2.y - a1.y;
+                    const dSq = dx * dx + dy * dy;
+                    const d = Math.sqrt(dSq);
+
+                    if (d < a1.r + a2.r) {
+                        // Collagen/Elastic Collision
+                        // Push apart
+                        const ideal = a1.r + a2.r;
+                        const push = (ideal - d) * 0.1; // Soft
+                        const nx = dx / d;
+                        const ny = dy / d;
+
+                        a1.vx -= nx * push; a1.vy -= ny * push;
+                        a2.vx += nx * push; a2.vy += ny * push;
+                    }
+
+                    // Bonding Check
+                    // If close, not bonded to each other, and have valence slots
+                    // Distance check < R1+R2 + 10
+                    if (d < a1.r + a2.r + 20 && d > a1.r + a2.r - 5) {
+                        tryBond(a1, a2);
+                    }
+                }
+            }
+
+            // 2. Bond Springs
+            // F = -k * (d - restLength)
+            for (let i = BONDS.length - 1; i >= 0; i--) {
+                const b = BONDS[i];
+                const dx = b.a2.x - b.a1.x;
+                const dy = b.a2.y - b.a1.y;
+                const d = Math.min(1000, Math.sqrt(dx * dx + dy * dy)); // Clamp d for safety
+
+                const rest = b.a1.r + b.a2.r;
+
+                // Spring Force
+                const k = 0.05;
+                const displacement = d - rest;
+
+                // Break Force?
+                if (displacement > 100 && !draggedAtom) {
+                    // Snap!
+                    // BONDS.splice(i, 1);
+                    // Remove from atom lists... (Logic complex, skip for now unless user pulls)
+                }
+
+                const f = k * displacement;
+                const nx = dx / d || 0;
+                const ny = dy / d || 0;
+
+                b.a1.vx += nx * f;
+                b.a1.vy += ny * f;
+                b.a2.vx -= nx * f;
+                b.a2.vy -= ny * f;
+            }
+        }
+
+        function tryBond(a1, a2) {
+            // Check if already bonded
+            if (a1.bonds.includes(a2)) return;
+
+            // Check Valence
+            if (a1.bonds.length >= a1.valence) return;
+            if (a2.bonds.length >= a2.valence) return;
+
+            // Bond!
+            BONDS.push({ a1: a1, a2: a2, type: 'covalent' });
+            a1.bonds.push(a2);
+            a2.bonds.push(a1);
+
+            // Effect
+            // Flash?
+        }
+
+        // --- RENDER ---
+        function drawBonds() {
+            ctx.lineWidth = 6;
+            for (let b of BONDS) {
+                // Determine style
+                // If dragged and stretched -> Yellow/Red
+                const dx = b.a2.x - b.a1.x;
+                const dy = b.a2.y - b.a1.y;
+                const d = Math.sqrt(dx * dx + dy * dy);
+                const rest = b.a1.r + b.a2.r;
+
+                const strain = (d - rest) / 100; // 0 to 1
+
+                let col = 'rgba(255,255,255,0.3)';
+                if (strain > 0.5) col = `rgba(255, ${255 * (1 - strain)}, 0, 0.6)`; // Stress color
+
+                ctx.strokeStyle = col;
+                ctx.beginPath();
+                ctx.moveTo(b.a1.x, b.a1.y);
+                ctx.lineTo(b.a2.x, b.a2.y);
+                ctx.stroke();
+
+                // Covalent electron pair (animated dot)
+                const t = performance.now() * 0.005;
+                const cx = (b.a1.x + b.a2.x) / 2 + Math.sin(t) * 5;
+                const cy = (b.a1.y + b.a2.y) / 2 + Math.cos(t) * 5;
+
+                ctx.fillStyle = '#60A5FA';
+                ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fill();
+            }
+        }
+
+        // --- LOOP ---
+        function loop() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+
+            ctx.clearRect(0, 0, width, height);
+
+            updatePhysics();
+
+            drawBonds();
+            ATOMS.forEach(a => {
+                a.update();
+                a.draw(ctx);
+            });
+
+            // Drag Line
+            if (spawnType) {
+                ctx.fillStyle = ELEMENTS[spawnType].col;
+                ctx.beginPath(); ctx.arc(spawnX, spawnY, ELEMENTS[spawnType].r, 0, Math.PI * 2); ctx.fill();
+            }
+
+            document.getElementById('atom-count').innerText = ATOMS.length;
+
+            requestAnimationFrame(loop);
+        }
+
+        // --- INTERACTION ---
+        let spawnType = null;
+        let spawnX = 0, spawnY = 0;
+        let draggedAtom = null;
+
+        window.startSpawn = (t) => {
+            spawnType = t;
+        };
+
+        window.addEventListener('mousemove', e => {
+            spawnX = e.clientX; spawnY = e.clientY;
+
+            if (draggedAtom) {
+                draggedAtom.x = e.clientX;
+                draggedAtom.y = e.clientY;
+                draggedAtom.vx = 0; draggedAtom.vy = 0;
+            }
+        });
+
+        window.addEventListener('mouseup', e => {
+            if (spawnType) {
+                ATOMS.push(new Atom(spawnType, e.clientX, e.clientY));
+                spawnType = null;
+            }
+            if (draggedAtom) draggedAtom = null;
+        });
+
+        canvas.addEventListener('mousedown', e => {
+            // Check pixel collision
+            const mx = e.clientX, my = e.clientY;
+            for (let a of ATOMS) {
+                const d = Math.hypot(a.x - mx, a.y - my);
+                if (d < a.r) {
+                    draggedAtom = a;
+                    // Right click physics?
+                    // Just drag
+                    break;
+                }
+            }
+        });
+
+        // Temp Ctrl
+        const thumb = document.getElementById('temp-thumb');
+        let tempDrag = false;
+        thumb.addEventListener('mousedown', () => tempDrag = true);
+        window.addEventListener('mouseup', () => tempDrag = false);
+        window.addEventListener('mousemove', (e) => {
+            if (tempDrag) {
+                // Bounds of temp-ctrl
+                // Assuming fixed right pos
+                const rect = document.querySelector('.temp-ctrl').getBoundingClientRect();
+                let ry = e.clientY - rect.top;
+                if (ry < 0) ry = 0;
+                if (ry > rect.height) ry = rect.height;
+
+                thumb.style.top = ry + 'px';
+
+                // Map to Kelvin 0 - 1000
+                // ry 0 (top) = 1000K, ry max (bottom) = 0K
+                TEMP = Math.round(1000 * (1 - ry / rect.height));
+                document.getElementById('temp-val').innerText = TEMP + ' K';
+            }
+        });
+
+
+        loop();
+
+        // INIT
+        ATOMS.push(new Atom('H', width / 2 - 50, height / 2));
+        ATOMS.push(new Atom('H', width / 2 + 50, height / 2));
+        ATOMS.push(new Atom('O', width / 2, height / 2 - 60));
+
+    </script>
+</body>
+
+</html>

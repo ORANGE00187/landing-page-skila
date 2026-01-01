@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | DNA Replication Helicase</title>
+    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Lato', sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .ui {
+            position: absolute;
+            width: 100%;
+            top: 20px;
+            text-align: center;
+            pointer-events: none;
+        }
+
+        h1 {
+            color: #fff;
+            text-transform: uppercase;
+            letter-spacing: 5px;
+            text-shadow: 0 0 10px #fff;
+        }
+
+        .hud-bottom {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 150px;
+            background: linear-gradient(to top, #111, transparent);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .base-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            font-weight: bold;
+            color: #fff;
+            cursor: pointer;
+            pointer-events: auto;
+            border: 2px solid #fff;
+            transition: transform 0.1s;
+            user-select: none;
+        }
+
+        .base-btn:active {
+            transform: scale(0.9);
+        }
+
+        .base-A {
+            background: #ef4444;
+            box-shadow: 0 0 20px #ef4444;
+        }
+
+        .base-T {
+            background: #3b82f6;
+            box-shadow: 0 0 20px #3b82f6;
+        }
+
+        .base-C {
+            background: #22c55e;
+            box-shadow: 0 0 20px #22c55e;
+        }
+
+        .base-G {
+            background: #eab308;
+            box-shadow: 0 0 20px #eab308;
+        }
+
+        #message {
+            position: absolute;
+            top: 50%;
+            width: 100%;
+            text-align: center;
+            font-size: 40px;
+            color: #fff;
+            font-weight: bold;
+            opacity: 0;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="ui">
+        <h1>DNA Replication Engine</h1>
+    </div>
+
+    <div id="message">MATCH!</div>
+
+    <div class="hud-bottom">
+        <div class="base-btn base-A" id="drag-A" draggable="true">A</div>
+        <div class="base-btn base-T" id="drag-T" draggable="true">T</div>
+        <div class="base-btn base-C" id="drag-C" draggable="true">C</div>
+        <div class="base-btn base-G" id="drag-G" draggable="true">G</div>
+        <div style="color:#aaa; font-size:12px; margin-left: 10px;">DRAG BASE TO MATCH</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const msg = document.getElementById('message');
+
+        let width, height;
+
+        // Config
+        const PAIRS = { 'A': 'T', 'T': 'A', 'C': 'G', 'G': 'C' };
+        const COLORS = { 'A': '#ef4444', 'T': '#3b82f6', 'C': '#22c55e', 'G': '#eab308' };
+
+        // State
+        let SCROLL_Y = 0;
+        let SPEED = 1.0;
+
+        // DNA Data Model
+        // List of Base Pairs.
+        // Some are "Zipped" (Double Helix).
+        // Some are "Unzipped" (Y Shape).
+        // Some are "Replicating" (Missing partner).
+
+        let STRAND = [];
+        let HELICASE_Y = 0; // The split point
+
+        // Mouse / Drag
+        let DRAG_TYPE = null;
+        let MOUSE = { x: 0, y: 0 };
+
+        function init() {
+            resize();
+            generateStrand();
+            HELICASE_Y = height * 0.6; // Start split slightly above middle
+
+            // Drag Events
+            document.querySelectorAll('.base-btn').forEach(b => {
+                b.addEventListener('dragstart', e => {
+                    DRAG_TYPE = b.innerText;
+                    e.dataTransfer.setDragImage(new Image(), 0, 0); // Hide default ghost
+                });
+                b.addEventListener('touchstart', e => {
+                    DRAG_TYPE = b.innerText;
+                });
+            });
+            window.addEventListener('dragover', e => { e.preventDefault(); MOUSE.x = e.clientX; MOUSE.y = e.clientY; });
+            window.addEventListener('drop', e => {
+                // Check drop logic handled in loop
+                e.preventDefault();
+                DRAG_TYPE = null;
+            });
+            window.addEventListener('touchend', () => DRAG_TYPE = null);
+            window.addEventListener('touchmove', e => { MOUSE.x = e.touches[0].clientX; MOUSE.y = e.touches[0].clientY; });
+
+            loop();
+        }
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+
+        function generateStrand() {
+            const bases = ['A', 'T', 'C', 'G'];
+            for (let i = 0; i < 100; i++) {
+                const b1 = bases[Math.floor(Math.random() * 4)];
+                STRAND.push({
+                    id: i,
+                    left: b1,
+                    right: PAIRS[b1],
+                    y: -i * 40, // Vertical spacing
+                    state: 'zipped', // zipped, split, rebuilt
+                    matched: true // if split, right side is gone? No, replication means we build New Strands.
+                    // Simplified output:
+                    // 1. Double Helix enters bottom.
+                    // 2. Helicase splits it.
+                    // 3. Left strand needs new partners. Right strand needs new partners.
+                    // User plays the enzymatic role for the Left Strand?
+                });
+            }
+        }
+
+        function showFeedback(txt) {
+            msg.innerText = txt;
+            msg.style.opacity = 1;
+            msg.style.transform = "scale(1.2)";
+            setTimeout(() => { msg.style.opacity = 0; msg.style.transform = "scale(1)"; }, 500);
+        }
+
+        function loop() {
+            // Update Speed
+            SCROLL_Y += SPEED;
+
+            // Render
+            ctx.fillStyle = '#050505';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw DNA
+            // Center X
+            const cx = width / 2;
+
+            STRAND.forEach(pair => {
+                // Calculate position based on Scroll
+                const renderY = pair.y + SCROLL_Y;
+
+                // If off screen, skip
+                if (renderY > height + 50) return;
+                if (renderY < -50) return;
+
+                // Logic based on Y pos relative to Helicase
+                // Simulation: Strand moves DOWN. Helicase is static visually?
+                // Or Helicase moves UP?
+                // Let's have Strand move DOWN. Helicase at fixed Y.
+                // Anything BELOW Helicase is Zipped.
+                // Anything ABOVE Helicase is Split.
+
+                // Wait, DNA moves UP usually? Or Enzyme moves along it.
+                // Let's move DNA Downward, showing unzipping at top.
+                // Actually, standard diagram: Y shape. Bottom is zipped. Top is open.
+                // So DNA moves DOWN? No, if Enzyme moves UP, then DNA moves DOWN relative to camera.
+
+                const isSplit = renderY < HELICASE_Y;
+
+                // Helix Math
+                // Twist freq
+                const phase = (renderY * 0.02);
+                const xOff = Math.sin(phase) * 60; // 3D Width
+                const zScale = Math.cos(phase); // For depth sorting/size
+
+                // If Split: They separate horizontally
+                let spread = 0;
+                if (isSplit) {
+                    // Smooth transition
+                    const dist = (HELICASE_Y - renderY);
+                    spread = Math.min(150, dist * 0.8);
+                }
+
+                const lx = cx - 20 + xOff - spread;
+                const rx = cx + 20 - xOff + spread;
+
+                // Draw Connections (Hydrogen Bonds)
+                if (!isSplit) {
+                    ctx.strokeStyle = `rgba(255,255,255, ${0.2 + zScale * 0.2})`;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.moveTo(lx, renderY); ctx.lineTo(rx, renderY); ctx.stroke();
+                }
+
+                // Draw Nucleotides
+                drawBase(lx, renderY, pair.left, zScale);
+
+                // Right Side Logic
+                // If split, user might need to match?
+                // Let's say user is building the COMPLEMENT to the LEFT strand.
+                // So the Right original strand drifts away?
+                // Simplified: User fills in the missing Right Side for the Left Strand.
+
+                if (isSplit && !pair.rebuilt) {
+                    // Empty SLOT
+                    ctx.fillStyle = '#222';
+                    ctx.beginPath(); ctx.arc(lx + 40, renderY, 10, 0, Math.PI * 2); ctx.fill();
+                    ctx.strokeStyle = '#555'; ctx.setLineDash([2, 2]); ctx.stroke(); ctx.setLineDash([]);
+
+                    // Check Collision with Drag
+                    if (DRAG_TYPE) {
+                        const dist = Math.hypot(MOUSE.x - (lx + 40), MOUSE.y - renderY);
+                        if (dist < 30) {
+                            // Attempt Match
+                            const target = PAIRS[pair.left];
+                            if (DRAG_TYPE === target) {
+                                pair.rebuilt = target; // Success
+                                showFeedback("MATCH!");
+                                DRAG_TYPE = null; // Consume
+                            }
+                        }
+                    }
+                } else if (!isSplit) {
+                    drawBase(rx, renderY, pair.right, zScale);
+                } else if (pair.rebuilt) {
+                    // Draw the user-added base
+                    drawBase(lx + 40, renderY, pair.rebuilt, zScale);
+                    // Connection
+                    ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.moveTo(lx, renderY); ctx.lineTo(lx + 40, renderY); ctx.stroke();
+                }
+            });
+
+            // Helicase (The Enzyme)
+            // Function of time
+            const t = Date.now() / 500;
+            const hx = width / 2;
+            const hy = HELICASE_Y;
+
+            ctx.shadowBlur = 30; ctx.shadowColor = '#0ff';
+            ctx.fillStyle = '#0df';
+            // Draw a blob
+            ctx.beginPath();
+            ctx.arc(hx, hy, 40 + Math.sin(t) * 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#000'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+            ctx.fillText("HELICASE", hx, hy);
+
+            // Render Dragging Item
+            if (DRAG_TYPE) {
+                ctx.globalAlpha = 0.8;
+                drawBase(MOUSE.x, MOUSE.y, DRAG_TYPE, 1);
+                ctx.globalAlpha = 1.0;
+            }
+
+            requestAnimationFrame(loop);
+        }
+
+        function drawBase(x, y, type, z) {
+            const size = 15 + z * 5;
+            const color = COLORS[type];
+
+            ctx.fillStyle = color;
+            ctx.beginPath(); ctx.arc(x, y, size, 0, Math.PI * 2); ctx.fill();
+
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.font = (10 + z * 2) + "px sans-serif"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(type, x, y);
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

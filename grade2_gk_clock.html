@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Gear Clock</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #e0f2fe;
+            font-family: 'Fredoka', sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .digital {
+            position: absolute;
+            bottom: 50px;
+            left: 50%;
+            transform: translate(-50%, 0);
+            background: #0f172a;
+            color: #10b981;
+            padding: 20px 60px;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 60px;
+            font-weight: bold;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="digital" id="digital">12:00</div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const dig = document.getElementById('digital');
+
+        let width, height;
+
+        // Time in Minutes (0 to 720 for 12 hours)
+        let TOTAL_MINUTES = 720; // 12:00
+
+        // Interaction
+        let DRAGGING = false;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        canvas.addEventListener('mousedown', () => DRAGGING = true);
+        window.addEventListener('mouseup', () => DRAGGING = false);
+        window.addEventListener('mousemove', e => {
+            if (DRAGGING) {
+                const cx = width / 2; const cy = height / 2;
+                const dx = e.clientX - cx;
+                const dy = e.clientY - cy;
+                const angle = Math.atan2(dy, dx) + Math.PI / 2; // 0 at top
+                // Convert angle to minutes
+                // Full circle = 60 mins.
+                // This is abrupt. Proper drag needs delta.
+
+                // Simplified: Just add speed based on x move
+                // TOTAL_MINUTES += e.movementX;
+
+                // Proper Angle map
+                // But wrapping is hard. Let's just use movementX for "Winding" feel.
+                TOTAL_MINUTES += e.movementX * 0.5;
+                if (TOTAL_MINUTES < 0) TOTAL_MINUTES += 720 * 2;
+
+                updateDigital();
+            }
+        });
+
+        function updateDigital() {
+            let m = Math.floor(Math.abs(TOTAL_MINUTES)) % (12 * 60);
+            let h = Math.floor(m / 60);
+            if (h === 0) h = 12;
+            let min = Math.floor(m % 60);
+            dig.innerText = `${h}:${min.toString().padStart(2, '0')}`;
+        }
+
+        function drawGear(cx, cy, r, teeth, angle, color) {
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(angle);
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            for (let i = 0; i < teeth; i++) {
+                const a = (Math.PI * 2 * i) / teeth;
+                const x = Math.cos(a) * r;
+                const y = Math.sin(a) * r;
+                const tx = Math.cos(a) * (r + 15);
+                const ty = Math.sin(a) * (r + 15);
+                ctx.lineTo(x, y);
+                ctx.lineTo(tx, ty); // Tooth tip
+                ctx.lineTo(Math.cos(a + 0.1) * (r + 15), Math.sin(a + 0.1) * (r + 15));
+                ctx.lineTo(Math.cos(a + 0.2) * r, Math.sin(a + 0.2) * r);
+            }
+            ctx.closePath();
+            ctx.fill();
+            // Hole
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.beginPath(); ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2); ctx.fill();
+            ctx.globalCompositeOperation = 'source-over';
+
+            ctx.restore();
+        }
+
+        function loop() {
+            ctx.fillStyle = '#e0f2fe';
+            ctx.fillRect(0, 0, width, height);
+
+            const cx = width / 2; const cy = height / 2;
+
+            // Draw Gears Background
+            // Minute Gear
+            drawGear(cx, cy, 150, 24, TOTAL_MINUTES * 0.1, '#cbd5e1'); // Spins fast
+
+            // Hour Gear (Smaller, meshed?)
+            // Just decorative behind
+            drawGear(cx - 180, cy - 100, 80, 12, -TOTAL_MINUTES * 0.05, '#94a3b8');
+
+            // Clock Face
+            ctx.fillStyle = 'rgba(255,255,255,0.8)';
+            ctx.beginPath(); ctx.arc(cx, cy, 200, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 10; ctx.stroke();
+
+            // Ticks
+            ctx.fillStyle = '#000';
+            for (let i = 0; i < 12; i++) {
+                const a = (Math.PI * 2 * i) / 12;
+                ctx.beginPath();
+                ctx.arc(cx + Math.cos(a) * 180, cy + Math.sin(a) * 180, 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // HANDS
+            // Minute Hand
+            const minAngle = (TOTAL_MINUTES % 60) / 60 * Math.PI * 2 - Math.PI / 2;
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(minAngle);
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 8;
+            ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(150, 0); ctx.stroke();
+            ctx.restore();
+
+            // Hour Hand
+            const hourAngle = (TOTAL_MINUTES / 60) / 12 * Math.PI * 2 - Math.PI / 2;
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(hourAngle);
+            ctx.strokeStyle = '#000'; ctx.lineWidth = 12;
+            ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(100, 0); ctx.stroke();
+            ctx.restore();
+
+            // Center Dot
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath(); ctx.arc(cx, cy, 10, 0, Math.PI * 2); ctx.fill();
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+
+    </script>
+</body>
+
+</html>

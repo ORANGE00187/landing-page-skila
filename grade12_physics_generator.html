@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Electromagnetic Generator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --neon-blue: #00f7ff;
+            --neon-purple: #bc13fe;
+            --copper: #b87333;
+            --magnet-red: #ef4444;
+            --magnet-blue: #3b82f6;
+            --panel-bg: rgba(10, 15, 30, 0.85);
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #050505;
+            font-family: 'Orbitron', sans-serif;
+            color: white;
+            user-select: none;
+        }
+
+        #canvas-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* GUI OVERLAY */
+        #gui {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .panel {
+            pointer-events: auto;
+            position: absolute;
+            background: var(--panel-bg);
+            border: 1px solid var(--neon-blue);
+            box-shadow: 0 0 15px rgba(0, 247, 255, 0.2);
+            border-radius: 8px;
+            padding: 20px;
+            backdrop-filter: blur(5px);
+        }
+
+        /* TOP HUD */
+        #hud-top {
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 700px;
+            display: flex;
+            justify-content: space-around;
+        }
+
+        .meter {
+            text-align: center;
+            width: 150px;
+        }
+
+        .meter-label {
+            font-size: 10px;
+            color: var(--neon-blue);
+            margin-bottom: 5px;
+        }
+
+        .meter-val {
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 0 0 10px var(--neon-blue);
+        }
+
+        .meter-unit {
+            font-size: 12px;
+            color: #888;
+        }
+
+        /* CRANK CONTROL */
+        #crank-panel {
+            bottom: 30px;
+            right: 30px;
+            width: 250px;
+            height: 250px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #crank-area {
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            border: 2px dashed #444;
+            position: relative;
+            margin-top: 10px;
+            cursor: grab;
+        }
+
+        #crank-area:active {
+            cursor: grabbing;
+            border-color: var(--neon-blue);
+        }
+
+        #handle {
+            width: 20px;
+            height: 20px;
+            background: var(--neon-blue);
+            border-radius: 50%;
+            position: absolute;
+            top: 10px;
+            left: 65px;
+            /* Top centerish */
+            box-shadow: 0 0 15px var(--neon-blue);
+        }
+
+        /* GRAPH */
+        #graph-panel {
+            bottom: 30px;
+            left: 30px;
+            width: 500px;
+            height: 200px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #333;
+        }
+
+        /* SETTINGS */
+        #settings {
+            top: 20px;
+            right: 20px;
+            width: 200px;
+        }
+
+        .setting-row {
+            margin-bottom: 15px;
+        }
+
+        .setting-label {
+            font-size: 11px;
+            color: #aaa;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        input[type=range] {
+            width: 100%;
+            accent-color: var(--neon-blue);
+        }
+
+        /* GALVANOMETER */
+        #galvanometer {
+            top: 150px;
+            left: 30px;
+            width: 200px;
+            height: 120px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #needle-con {
+            width: 180px;
+            height: 60px;
+            border-top-left-radius: 90px;
+            border-top-right-radius: 90px;
+            border: 2px solid #555;
+            border-bottom: none;
+            position: relative;
+            overflow: hidden;
+            background: #000;
+        }
+
+        #needle {
+            width: 4px;
+            height: 50px;
+            background: red;
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform-origin: bottom center;
+            transform: rotate(0deg);
+            transition: transform 0.1s;
+        }
+
+        .scale-mark {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            width: 2px;
+            height: 10px;
+            background: #fff;
+            transform-origin: bottom center;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas-layer"></canvas>
+
+    <div id="gui">
+        <div id="hud-top" class="panel">
+            <div class="meter">
+                <div class="meter-label">MAGNETIC FLUX (Φ)</div>
+                <div class="meter-val" id="val-flux">0.00</div>
+                <div class="meter-unit">Webers</div>
+            </div>
+            <div class="meter">
+                <div class="meter-label">EMF (VOLTAGE)</div>
+                <div class="meter-val" id="val-emf" style="color:var(--neon-purple)">0.0</div>
+                <div class="meter-unit">Volts</div>
+            </div>
+            <div class="meter">
+                <div class="meter-label">FREQ (RPM)</div>
+                <div class="meter-val" id="val-rpm">0</div>
+                <div class="meter-unit">Rev/Min</div>
+            </div>
+            <div class="meter">
+                <div class="meter-label">POWER OUTPUT</div>
+                <div class="meter-val" id="val-power">0</div>
+                <div class="meter-unit">Watts</div>
+            </div>
+        </div>
+
+        <div class="panel" id="settings">
+            <div class="setting-row">
+                <span class="setting-label">MAGNETIC STRENGTH (B)</span>
+                <input type="range" id="sl-mag" min="1" max="10" value="5">
+            </div>
+            <div class="setting-row">
+                <span class="setting-label">NUM LOOPS (N)</span>
+                <input type="range" id="sl-loops" min="1" max="50" value="10">
+            </div>
+            <div class="setting-row">
+                <span class="setting-label">AREA (A)</span>
+                <input type="range" id="sl-area" min="5" max="20" value="10">
+            </div>
+        </div>
+
+        <div class="panel" id="galvanometer">
+            <div style="font-size:12px; margin-bottom:10px;">GALVANOMETER</div>
+            <div id="needle-con">
+                <!-- Marks generated by JS -->
+                <div id="needle"></div>
+            </div>
+            <div style="margin-top:5px; font-size:10px; color:#666;">-50 ... 0 ... +50</div>
+        </div>
+
+        <div class="panel" id="graph-panel">
+            <canvas id="graph-canvas"></canvas>
+            <div style="position:absolute; top:5px; left:5px; font-size:10px; color:#aaa;">dΦ/dt (EMF Output)</div>
+        </div>
+
+        <div class="panel" id="crank-panel">
+            <div style="font-size:12px; text-transform:uppercase; color:var(--neon-blue);">Manual Crank</div>
+            <div id="crank-area">
+                <div class="center-nub"
+                    style="position:absolute; top:50%; left:50%; width:10px; height:10px; background:#666; border-radius:50%; transform:translate(-50%,-50%);">
+                </div>
+                <div id="handle"></div>
+                <div style="position:absolute; top:50%; left:50%; width:75px; height:4px; background:#444; transform-origin: left center; transform: rotate(-90deg) translate(0, -2px); pointer-events:none;"
+                    id="crank-arm"></div>
+            </div>
+            <div style="font-size:10px; color:#666; margin-top:10px;">SPIN TO GENERATE</div>
+        </div>
+
+    </div>
+
+    <script>
+        /**
+         * ELECTROMAGNETIC GENERATOR SIMULATION
+         * 3D Physics Visualization of Faraday's Law using Canvas 2D
+         * EMF = -N * (dΦ/dt)
+         * Φ = B * A * cos(θ)
+         */
+
+        const canvas = document.getElementById('canvas-layer');
+        const ctx = canvas.getContext('2d');
+        const gCanvas = document.getElementById('graph-canvas');
+        const gCtx = gCanvas.getContext('2d');
+
+        // --- CONSTANTS ---
+        let W, H;
+
+        // --- PHYSICS STATE ---
+        let T = 0;
+        let ANGLE = 0; // Armature angle (rad)
+        let VELOCITY = 0; // Angular velocity (rad/frame)
+
+        // Config
+        let B_FIELD = 5; // Tesla (1-10)
+        let N_LOOPS = 10;
+        let AREA = 10;
+
+        // Derived
+        let FLUX = 0;
+        let PREV_FLUX = 0;
+        let EMF = 0;
+
+        // Visual Strings
+        let FLUX_LINES = [];
+
+        // --- INPUTS ---
+        const slMag = document.getElementById('sl-mag');
+        const slLoops = document.getElementById('sl-loops');
+        const slArea = document.getElementById('sl-area');
+
+        // Crank Logic
+        const crankArea = document.getElementById('crank-area');
+        const handle = document.getElementById('handle');
+        const crankArm = document.getElementById('crank-arm');
+        let dragging = false;
+        let lastAngle = -Math.PI / 2;
+
+        // Graph Data
+        let history = []; // {v, t}
+
+        function init() {
+            resize();
+            window.addEventListener('resize', resize);
+
+            // Generate Flux Lines
+            for (let i = 0; i < 30; i++) {
+                FLUX_LINES.push({
+                    y: (Math.random() - 0.5) * 400, // Y offset from center
+                    z: (Math.random() - 0.5) * 200, // Z offset from center
+                    vibe: 0,
+                    phase: Math.random() * Math.PI * 2
+                });
+            }
+
+            // Build Galvo Marks
+            const nc = document.getElementById('needle-con');
+            for (let i = -50; i <= 50; i += 10) {
+                const mark = document.createElement('div');
+                mark.className = 'scale-mark';
+                // Map -50..50 to -70deg..70deg
+                const deg = (i / 50) * 70;
+                mark.style.transform = `translateX(-1px) rotate(${deg}deg) translateY(-55px)`;
+                if (i === 0) { mark.style.height = "15px"; mark.style.background = "red"; }
+                nc.appendChild(mark);
+            }
+
+            // Sliders
+            slMag.addEventListener('input', e => B_FIELD = parseFloat(e.target.value));
+            slLoops.addEventListener('input', e => N_LOOPS = parseInt(e.target.value));
+            slArea.addEventListener('input', e => AREA = parseFloat(e.target.value));
+
+            // Crank Events
+            crankArea.addEventListener('mousedown', e => { dragging = true; updateCrank(e); });
+            window.addEventListener('mouseup', () => dragging = false);
+            window.addEventListener('mousemove', e => { if (dragging) updateCrank(e); });
+
+            loop();
+        }
+
+        function resize() {
+            W = canvas.width = window.innerWidth;
+            H = canvas.height = window.innerHeight;
+            gCanvas.width = document.getElementById('graph-panel').clientWidth;
+            gCanvas.height = document.getElementById('graph-panel').clientHeight;
+        }
+
+        function updateCrank(e) {
+            const rect = crankArea.getBoundingClientRect();
+            const cx = rect.left + rect.width / 2;
+            const cy = rect.top + rect.height / 2;
+
+            const dx = e.clientX - cx;
+            const dy = e.clientY - cy;
+            const ang = Math.atan2(dy, dx);
+
+            // Calculate delta for velocity
+            let dAng = ang - lastAngle;
+            // Handle wrap around PI/-PI
+            if (dAng < -Math.PI) dAng += Math.PI * 2;
+            if (dAng > Math.PI) dAng -= Math.PI * 2;
+
+            VELOCITY = dAng; // Direct control
+
+            lastAngle = ang;
+
+            // Update UI position
+            const r = 60; // radius
+            const hx = 75 + Math.cos(ang) * r - 10;
+            const hy = 75 + Math.sin(ang) * r - 10;
+            handle.style.left = hx + "px";
+            handle.style.top = hy + "px";
+            crankArm.style.transform = `rotate(${ang * 180 / Math.PI}deg) translate(0, -2px)`;
+            crankArm.style.width = r + "px";
+        }
+
+        // --- 3D PROJECTION HELPER ---
+        function project(x, y, z) {
+            const fov = 600;
+            const scale = fov / (fov + z);
+            return {
+                x: W / 2 + x * scale,
+                y: H / 2 + y * scale,
+                scale: scale
+            };
+        }
+
+        function loop() {
+            // 1. PHYSICS UPDATE
+            if (!dragging) {
+                VELOCITY *= 0.95; // Friction slows it down
+            }
+            ANGLE += VELOCITY;
+
+            // Flux Calculation
+            // Φ = B * A * cos(θ)
+            const cosTheta = Math.cos(ANGLE);
+            const flux = B_FIELD * AREA * cosTheta * 0.1; // scale factor
+
+            // EMF Calculation (Faraday's Law)
+            // EMF = -N * dΦ/dt
+            // EMF = -N * B * A * -sin(θ) * dθ/dt
+            // EMF = N * B * A * sin(θ) * ω
+            const sinTheta = Math.sin(ANGLE);
+            const emf = N_LOOPS * B_FIELD * AREA * sinTheta * VELOCITY * 0.5;
+
+            FLUX = flux;
+            EMF = emf;
+
+            // Update HUD
+            document.getElementById('val-flux').innerText = FLUX.toFixed(2);
+            document.getElementById('val-emf').innerText = Math.abs(EMF).toFixed(1);
+            document.getElementById('val-rpm').innerText = Math.abs(Math.round((VELOCITY * 60 * 60) / (2 * Math.PI))); // heuristic scale
+            document.getElementById('val-power').innerText = (Math.abs(EMF) * Math.abs(EMF) * 0.1).toFixed(1); // P = V^2/R
+
+            // Update Galvo Needle
+            const ndl = document.getElementById('needle');
+            // Clamp -50 to 50
+            let val = EMF * 2; // sensitivity
+            if (val > 50) val = 50; if (val < -50) val = -50;
+            const deg = (val / 50) * 70;
+            ndl.style.transform = `rotate(${deg}deg)`;
+
+            // Graph
+            history.push(EMF);
+            if (history.length > 200) history.shift();
+
+            render();
+            renderGraph();
+            requestAnimationFrame(loop);
+        }
+
+        function render() {
+            ctx.fillStyle = '#050505';
+            ctx.fillRect(0, 0, W, H);
+
+            // 1. DRAW MAGNETS (Static Background Layer)
+            // Left Magnet (North) - Red
+            ctx.fillStyle = '#111';
+            ctx.fillRect(W / 2 - 400, H / 2 - 150, 200, 300); // Body
+            ctx.fillStyle = '#991b1b';
+            ctx.fillRect(W / 2 - 220, H / 2 - 150, 40, 300); // Pole Face
+            // Label N
+            ctx.fillStyle = '#fff'; ctx.font = "80px sans-serif"; ctx.fillText("N", W / 2 - 350, H / 2 + 30);
+
+            // Right Magnet (South) - Blue
+            ctx.fillStyle = '#111';
+            ctx.fillRect(W / 2 + 200, H / 2 - 150, 200, 300); // Body
+            ctx.fillStyle = '#1e3a8a';
+            ctx.fillRect(W / 2 + 180, H / 2 - 150, 40, 300); // Pole Face
+            // Label S
+            ctx.fillStyle = '#fff'; ctx.fillText("S", W / 2 + 250, H / 2 + 30);
+
+            // 2. DRAW FLUX LINES (Dynamic Strings)
+            // Lines go from N (Left, x=-180) to S (Right, x=180)
+
+            // Determine loop plane normal for intersection logic
+            // Normal x = sin(angle), z = cos(angle) roughly
+            const nx = Math.sin(ANGLE);
+            const nz = Math.cos(ANGLE);
+
+            FLUX_LINES.forEach(l => {
+                // "Pluck" effect if cutting
+                // Velocity is high and line is near cutting plane
+                // Cutting plane is at y=0 roughly when coil is flat? No.
+                // Coil rotates around X axis? Or Z?
+                // Let's assume Coil rotates around Z axis (vertical in 2D top down terms, but here in 3D...)
+                // Standard generator: Coil rotates around Z axis (perpendicular to B field).
+                // B field is X axis (Left to Right).
+                // Coil axis of rotation is Y axis (Vertical on screen).
+
+                // My Projection:
+                // Axis of rotation is VERTICAL (Y).
+                // Coil spins around Y axis.
+
+                // Flux lines are Horizontal (X).
+
+                // Simple pluck visualization: varies by VELOCITY
+                const intensity = Math.abs(EMF) * 0.5;
+                const vibration = Math.sin(Date.now() * 0.1 + l.phase) * intensity;
+
+                ctx.strokeStyle = `rgba(0, 247, 255, ${0.1 + intensity * 0.01})`;
+                ctx.lineWidth = 1 + intensity * 0.05;
+
+                // Use multiple segments to curve
+                ctx.beginPath();
+                const ly = l.y + vibration;
+                const start = project(-180, ly, l.z);
+                const end = project(180, ly, l.z);
+
+                ctx.moveTo(start.x, start.y);
+                ctx.lineTo(end.x, end.y);
+                ctx.stroke();
+
+                // Field particles flow
+                if (T % 10 === 0 && Math.random() < 0.1) {
+                    // particle
+                }
+            });
+
+            // 3. DRAW COIL (The Armature)
+            // Rectangular Loop rotating around Y axis.
+            // Width = 200, Height = 100 * AreaScale
+            const cw = 150;
+            const ch = 100 + (AREA - 10) * 10;
+
+            // Corners in 3D Model Space
+            // Rotation around Y axis
+            // x = r * cos(angle)
+            // z = r * sin(angle)
+
+            const r = cw / 2;
+
+            // 4 points
+            // p1: -r, -ch/2  -> rotated
+            // p2: r, -ch/2
+            // p3: r, ch/2
+            // p4: -r, ch/2
+
+            function getRotated(x, y, z) {
+                // Rot Y
+                const rx = x * Math.cos(ANGLE) - z * Math.sin(ANGLE);
+                const rz = x * Math.sin(ANGLE) + z * Math.cos(ANGLE);
+                return { x: rx, y: y, z: rz };
+            }
+
+            const p1 = getRotated(-r, -ch / 2, 0);
+            const p2 = getRotated(r, -ch / 2, 0);
+            const p3 = getRotated(r, ch / 2, 0);
+            const p4 = getRotated(-r, ch / 2, 0);
+
+            const pp1 = project(p1.x, p1.y, p1.z);
+            const pp2 = project(p2.x, p2.y, p2.z);
+            const pp3 = project(p3.x, p3.y, p3.z);
+            const pp4 = project(p4.x, p4.y, p4.z);
+
+            // Back segments (if z is high)
+            // Simple Painter's alg is hard with intersecting lines.
+            // Just draw wire.
+
+            // Wire Color - Brightens with EMF
+            const heat = Math.min(255, Math.abs(EMF) * 5);
+            const wireCol = `rgb(255, ${200 - heat * 0.5}, ${150 - heat * 0.5})`; // White/Orange glow
+
+            ctx.strokeStyle = wireCol;
+            ctx.lineWidth = 4 + N_LOOPS * 0.2; // Thicker for more loops
+
+            ctx.beginPath();
+            ctx.moveTo(pp1.x, pp1.y);
+            ctx.lineTo(pp2.x, pp2.y);
+            ctx.lineTo(pp3.x, pp3.y);
+            ctx.lineTo(pp4.x, pp4.y);
+            ctx.closePath();
+            ctx.stroke();
+
+            ctx.fillStyle = `rgba(184, 115, 51, 0.2)`;
+            ctx.fill();
+
+            // 4. SPARKLES (Electrons)
+            if (Math.abs(EMF) > 2) {
+                const count = Math.floor(Math.abs(EMF));
+                ctx.fillStyle = '#fff';
+                for (let i = 0; i < count; i++) {
+                    // Pick random point on wire perimeter
+                    const side = Math.floor(Math.random() * 4);
+                    let start, end, t = Math.random();
+                    if (side === 0) { start = pp1; end = pp2; }
+                    else if (side === 1) { start = pp2; end = pp3; }
+                    else if (side === 2) { start = pp3; end = pp4; }
+                    else { start = pp4; end = pp1; }
+
+                    const px = start.x + (end.x - start.x) * t;
+                    const py = start.y + (end.y - start.y) * t;
+
+                    ctx.beginPath(); ctx.arc(px, py, 2, 0, Math.PI * 2); ctx.fill();
+                }
+            }
+
+            // 5. AXIS and SLIP RINGS (Visual anchor)
+            const topProj = project(0, -ch / 2, 0);
+            const botProj = project(0, ch / 2, 0);
+
+            ctx.strokeStyle = '#555'; ctx.lineWidth = 10;
+            ctx.beginPath(); ctx.moveTo(topProj.x, topProj.y); ctx.lineTo(topProj.x, 0); ctx.stroke(); // Top shaft
+            ctx.beginPath(); ctx.moveTo(botProj.x, botProj.y); ctx.lineTo(botProj.x, H); ctx.stroke(); // Bot shaft
+
+            T++;
+        }
+
+        function renderGraph() {
+            const w = gCanvas.width;
+            const h = gCanvas.height;
+            gCtx.clearRect(0, 0, w, h);
+
+            // Grid
+            gCtx.strokeStyle = '#333'; gCtx.lineWidth = 1;
+            gCtx.beginPath(); gCtx.moveTo(0, h / 2); gCtx.lineTo(w, h / 2); gCtx.stroke();
+
+            if (history.length < 2) return;
+
+            gCtx.strokeStyle = 'var(--neon-purple)';
+            gCtx.lineWidth = 2;
+            gCtx.beginPath();
+
+            // Scale Y: fit -50..50 into h
+            // h/2 is 0.
+            const scaleY = (h / 2) / 60;
+
+            for (let i = 0; i < history.length; i++) {
+                const x = (i / 200) * w;
+                const val = history[i];
+                const y = h / 2 - val * scaleY;
+                if (i === 0) gCtx.moveTo(x, y); else gCtx.lineTo(x, y);
+            }
+            gCtx.stroke();
+
+            // Glow head
+            const last = history[history.length - 1];
+            const lx = (history.length / 200) * w;
+            const ly = h / 2 - last * scaleY;
+            gCtx.fillStyle = '#fff';
+            gCtx.beginPath(); gCtx.arc(lx, ly, 3, 0, Math.PI * 2); gCtx.fill();
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

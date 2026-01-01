@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | VSEPR Geometry Engine</title>
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Quicksand', sans-serif;
+            color: white;
+        }
+
+        #canvas-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at center, #1e1b4b, #000);
+        }
+
+        /* UI OVERLAY */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 30px;
+        }
+
+        h1 {
+            font-size: 32px;
+            font-weight: 700;
+            color: #a5b4fc;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: 0 0 20px #6366f1;
+        }
+
+        .controls {
+            pointer-events: auto;
+            display: flex;
+            gap: 20px;
+            align-items: flex-end;
+        }
+
+        .btn-add {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            border: 2px solid white;
+            background: rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.2s;
+            backdrop-filter: blur(10px);
+        }
+
+        .btn-add:hover {
+            transform: scale(1.1);
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-add:active {
+            transform: scale(0.95);
+        }
+
+        .btn-atom {
+            border-color: #3b82f6;
+            color: #3b82f6;
+        }
+
+        .btn-lone {
+            border-color: #facc15;
+            color: #facc15;
+        }
+
+        .btn-reset {
+            border-color: #ef4444;
+            color: #ef4444;
+            width: 60px;
+            height: 60px;
+            font-size: 12px;
+        }
+
+        .atom-icon {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: currentColor;
+            margin-bottom: 5px;
+            box-shadow: 0 0 10px currentColor;
+        }
+
+        .info-panel {
+            pointer-events: auto;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #444;
+            max-width: 300px;
+        }
+
+        .shape-name {
+            font-size: 24px;
+            color: #fff;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .shape-desc {
+            font-size: 14px;
+            color: #aaa;
+        }
+
+        #angle-display {
+            position: absolute;
+            top: 50%;
+            right: 50px;
+            transform: translateY(-50%);
+            text-align: right;
+        }
+
+        .angle-val {
+            font-size: 40px;
+            font-weight: bold;
+            color: #fff;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas-layer"></canvas>
+
+    <div id="ui-layer">
+        <div>
+            <h1>VSEPR Builder</h1>
+            <div style="color:#666">Valence Shell Electron Pair Repulsion</div>
+        </div>
+
+        <div id="angle-display">
+            <div class="angle-val" id="disp-ang">--°</div>
+            <div style="color:#666">Bond Angle</div>
+        </div>
+
+        <div class="controls">
+            <div class="info-panel">
+                <div class="shape-name" id="name-shape">Linear</div>
+                <div class="shape-desc" id="desc-shape">2 Electron Domains</div>
+            </div>
+
+            <div style="flex-grow:1"></div>
+
+            <button class="btn-add btn-atom" onclick="addAtom()">
+                <div class="atom-icon"></div>
+                <span>+ BOND</span>
+            </button>
+            <button class="btn-add btn-lone" onclick="addLone()">
+                <div class="atom-icon" style="background:transparent; border:2px dashed currentColor"></div>
+                <span>+ LONE</span>
+            </button>
+            <button class="btn-add btn-reset" onclick="resetMol()">RESET</button>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * VSEPR 3D ENGINE
+         * Simulates repulsion of points on a sphere.
+         * Concept: Thomson Problem / Coulomb Force wrapper.
+         * Tech: 3D projection to 2D canvas.
+         */
+
+        const canvas = document.getElementById('canvas-layer');
+        const ctx = canvas.getContext('2d');
+
+        let W, H;
+
+        // --- 3D MATH ---
+        // A simple camera looking at 0,0,0
+        let CAM_DIST = 400;
+        let MOL_SCALE = 200; // Radius of bonds
+
+        // Rotation
+        let ROT_X = 0;
+        let ROT_Y = 0;
+
+        // --- STATE ---
+        // Central Atom is always at 0,0,0.
+        // Attachments: { type: 'ATOM' | 'LONE', x, y, z, vx, vy, vz }
+        // We simulate physics on the unit sphere (x^2+y^2+z^2 = 1).
+        let ATOMS = [];
+
+        // Initial setup: Linear (2 atoms)
+        // Physics Loop tries to maximize distance between all atoms.
+
+        function init() {
+            resize();
+            resetMol(); // Start with 2 bonds
+
+            // Interaction
+            let dragging = false;
+            let lx = 0, ly = 0;
+            window.addEventListener('mousedown', e => { dragging = true; lx = e.clientX; ly = e.clientY; });
+            window.addEventListener('mouseup', () => dragging = false);
+            window.addEventListener('mousemove', e => {
+                if (dragging) {
+                    const dx = e.clientX - lx;
+                    const dy = e.clientY - ly;
+                    ROT_Y += dx * 0.01;
+                    ROT_X += dy * 0.01;
+                    lx = e.clientX; ly = e.clientY;
+                }
+            });
+            window.addEventListener('resize', resize);
+
+            loop();
+        }
+
+        function resize() {
+            W = canvas.width = window.innerWidth;
+            H = canvas.height = window.innerHeight;
+        }
+
+        window.resetMol = () => {
+            ATOMS = [];
+            addAtom();
+            addAtom();
+        };
+
+        window.addAtom = () => spawn('ATOM');
+        window.addLone = () => spawn('LONE');
+
+        function spawn(type) {
+            if (ATOMS.length >= 6) return; // Limit to octahedral for basic VSEPR
+            // Spawn random vector
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.random() * Math.PI;
+            const x = Math.sin(phi) * Math.cos(theta);
+            const y = Math.sin(phi) * Math.sin(theta);
+            const z = Math.cos(phi);
+            ATOMS.push({ type, x, y, z, vx: 0, vy: 0, vz: 0 });
+            identifyShape();
+        }
+
+        // --- PHYSICS ---
+        function updatePhysics() {
+            // Coulomb Repulsion
+            // F = k * q1*q2 / r^2
+            // All "q" are equal (1).
+            // Lone pairs might repel MORE? VSEPR says Lone Pairs occupy more space.
+            // Let's give Lone Pairs effective charge q=1.5.
+
+            const k = 0.01;
+
+            // 1. Calculate Forces relative to distance
+            for (let i = 0; i < ATOMS.length; i++) {
+                for (let j = i + 1; j < ATOMS.length; j++) {
+                    const a = ATOMS[i];
+                    const b = ATOMS[j];
+
+                    const dx = a.x - b.x;
+                    const dy = a.y - b.y;
+                    const dz = a.z - b.z;
+                    const distSq = dx * dx + dy * dy + dz * dz;
+                    const dist = Math.sqrt(distSq);
+
+                    if (dist < 0.001) continue;
+
+                    const qa = a.type === 'LONE' ? 2.0 : 1.0;
+                    const qb = b.type === 'LONE' ? 2.0 : 1.0;
+
+                    const F = (k * qa * qb) / distSq;
+
+                    // Direction vector (normalized)
+                    const nx = dx / dist;
+                    const ny = dy / dist;
+                    const nz = dz / dist;
+
+                    // Apply Force
+                    a.vx += nx * F;
+                    a.vy += ny * F;
+                    a.vz += nz * F;
+
+                    b.vx -= nx * F;
+                    b.vy -= ny * F;
+                    b.vz -= nz * F;
+                }
+            }
+
+            // 2. Move and Constrain to Sphere
+            ATOMS.forEach(a => {
+                a.x += a.vx;
+                a.y += a.vy;
+                a.z += a.vz;
+
+                // Friction
+                a.vx *= 0.9;
+                a.vy *= 0.9;
+                a.vz *= 0.9;
+
+                // Normalize to radius 1
+                const d = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+                a.x /= d; a.y /= d; a.z /= d;
+            });
+
+            // Auto Rotate
+            ROT_Y += 0.002;
+        }
+
+        function identifyShape() {
+            // Logic based on counts
+            const bonds = ATOMS.filter(a => a.type === 'ATOM').length;
+            const lones = ATOMS.filter(a => a.type === 'LONE').length;
+            const total = bonds + lones;
+
+            let name = "Unknown";
+            let ang = "--°";
+
+            if (total === 2) {
+                name = "Linear"; ang = "180°";
+            } else if (total === 3) {
+                if (lones === 0) { name = "Trigonal Planar"; ang = "120°"; }
+                else { name = "Bent"; ang = "<120°"; }
+            } else if (total === 4) {
+                if (lones === 0) { name = "Tetrahedral"; ang = "109.5°"; }
+                else if (lones === 1) { name = "Trigonal Pyramidal"; ang = "107°"; }
+                else { name = "Bent"; ang = "104.5°"; }
+            } else if (total === 5) {
+                if (lones === 0) name = "Trigonal Bipyramidal";
+                else if (lones === 1) name = "Seesaw";
+                else if (lones === 2) name = "T-Shaped";
+                else name = "Linear";
+                ang = "90°, 120°";
+            } else if (total === 6) {
+                if (lones === 0) name = "Octahedral";
+                else if (lones === 1) name = "Square Pyramidal";
+                else name = "Square Planar";
+                ang = "90°";
+            }
+
+            document.getElementById('name-shape').innerText = name;
+            document.getElementById('desc-shape').innerText = `${bonds} Bonds, ${lones} Lone Pairs`;
+            document.getElementById('disp-ang').innerText = ang;
+        }
+
+        // --- RENDER ---
+        function loop() {
+            updatePhysics();
+
+            ctx.clearRect(0, 0, W, H);
+
+            const cx = W / 2;
+            const cy = H / 2;
+
+            // 1. Sort atoms by depth (Z) after rotation
+            const renderList = [];
+
+            // Central Atom
+            renderList.push({ type: 'CENTRAL', z: 0, x: 0, y: 0, scale: 1 });
+
+            // Attachments
+            ATOMS.forEach(a => {
+                // Rotate Point
+                // Rotate Y
+                let x1 = a.x * Math.cos(ROT_Y) - a.z * Math.sin(ROT_Y);
+                let z1 = a.x * Math.sin(ROT_Y) + a.z * Math.cos(ROT_Y);
+                let y1 = a.y;
+
+                // Rotate X
+                let y2 = y1 * Math.cos(ROT_X) - z1 * Math.sin(ROT_X);
+                let z2 = y1 * Math.sin(ROT_X) + z1 * Math.cos(ROT_X);
+                let x2 = x1;
+
+                // Project
+                // Persepctive scale = DIST / (DIST - z)
+                // If z is close to DIST, it's big. z is negative (far), it's small.
+                // Our sphere radius is MOL_SCALE (200).
+
+                // Let's use simple z-sort index
+                const pScale = CAM_DIST / (CAM_DIST - z2 * MOL_SCALE);
+                const px = x2 * MOL_SCALE * pScale;
+                const py = y2 * MOL_SCALE * pScale;
+
+                renderList.push({
+                    type: a.type,
+                    x: px, y: py, z: z2, // Store z for sort
+                    scale: pScale
+                });
+            });
+
+            // Sort: draw furthest (lowest z) first
+            renderList.sort((a, b) => a.z - b.z);
+
+            // Draw
+            renderList.forEach(obj => {
+                const sx = cx + obj.x;
+                const sy = cy + obj.y;
+
+                if (obj.type === 'CENTRAL') {
+                    // Draw central nucleus glow
+                    const rad = 40;
+                    const grad = ctx.createRadialGradient(sx, sy, rad * 0.2, sx, sy, rad);
+                    grad.addColorStop(0, '#fff');
+                    grad.addColorStop(0.5, '#6366f1');
+                    grad.addColorStop(1, 'rgba(99, 102, 241, 0)');
+                    ctx.fillStyle = grad;
+                    ctx.beginPath(); ctx.arc(sx, sy, rad, 0, Math.PI * 2); ctx.fill();
+
+                } else if (obj.type === 'ATOM') {
+                    // Bond Line (if behind central?)
+                    // Draw bond only if z is behind?
+                    // Actually, draw bonds first? 
+                    // Let's simplify: Draw line to center.
+                    ctx.strokeStyle = `rgba(255,255,255,${0.5 * obj.scale})`;
+                    ctx.lineWidth = 4 * obj.scale;
+                    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(sx, sy); ctx.stroke();
+
+                    // Atom Sphere
+                    const rad = 25 * obj.scale;
+                    const grad = ctx.createRadialGradient(sx - rad * 0.3, sy - rad * 0.3, rad * 0.1, sx, sy, rad);
+                    grad.addColorStop(0, '#fff');
+                    grad.addColorStop(0.5, '#3b82f6');
+                    grad.addColorStop(1, '#1e3a8a');
+                    ctx.fillStyle = grad;
+
+                    ctx.shadowBlur = 10; ctx.shadowColor = '#3b82f6';
+                    ctx.beginPath(); ctx.arc(sx, sy, rad, 0, Math.PI * 2); ctx.fill();
+                    ctx.shadowBlur = 0;
+
+                } else if (obj.type === 'LONE') {
+                    // Ghostly lobe
+                    const rad = 30 * obj.scale;
+                    ctx.fillStyle = `rgba(250, 204, 21, 0.3)`; // Yellowish ghost
+                    ctx.strokeStyle = `rgba(250, 204, 21, 0.6)`;
+
+                    // Draw teardrop shape pointing away from center
+                    // Vector from center to obj
+                    const ang = Math.atan2(obj.y, obj.x);
+
+                    ctx.save();
+                    ctx.translate(sx, sy);
+                    ctx.rotate(ang);
+                    // Draw lobe
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, rad * 1.5, rad, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    // Electrons dots
+                    ctx.fillStyle = '#ff0';
+                    ctx.beginPath(); ctx.arc(-5, -5, 3, 0, Math.PI * 2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(-5, 5, 3, 0, Math.PI * 2); ctx.fill();
+
+                    ctx.restore();
+                }
+            });
+
+            requestAnimationFrame(loop);
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

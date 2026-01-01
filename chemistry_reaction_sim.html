@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skila.ai | Reaction Kinetics</title>
+    <!-- FONTS -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0F172A;
+            /* Slate 900 */
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+            color: white;
+        }
+
+        #sim-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* UI */
+        .ui-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        /* HUD */
+        .hud-panel {
+            position: absolute;
+            top: 40px;
+            right: 40px;
+            width: 320px;
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 24px;
+            pointer-events: auto;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .graph-container {
+            width: 100%;
+            height: 150px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-label {
+            font-size: 12px;
+            color: #94A3B8;
+            margin-bottom: 8px;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* SLIDER styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #fff;
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 0 10px white;
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #334155;
+            border-radius: 2px;
+        }
+
+        /* Temp Slider Special */
+        #temp-slider::-webkit-slider-runnable-track {
+            background: linear-gradient(to right, #3B82F6, #EF4444);
+        }
+
+        .catalyst-btn {
+            width: 100%;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: #94A3B8;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .catalyst-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .catalyst-btn.active {
+            background: rgba(16, 185, 129, 0.2);
+            border-color: #10B981;
+            color: #10B981;
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding-top: 20px;
+        }
+
+        .stat-box {
+            text-align: center;
+        }
+
+        .stat-val {
+            font-family: 'JetBrains Mono';
+            font-weight: 700;
+            font-size: 20px;
+            color: white;
+        }
+
+        .stat-lbl {
+            font-size: 11px;
+            color: #64748B;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="sim-canvas"></canvas>
+
+    <div class="ui-layer">
+        <div class="hud-panel">
+            <div class="flex items-center justify-between mb-6">
+                <div class="text-xs text-cyan-400 font-bold uppercase tracking-widest">
+                    <i class="fas fa-flask mr-2"></i>Kinetics Lab
+                </div>
+                <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+            </div>
+
+            <div class="graph-container">
+                <canvas id="energy-graph" width="270" height="150"></canvas>
+            </div>
+
+            <div class="control-group">
+                <div class="control-label">
+                    <span>Temperature</span>
+                    <span id="temp-display" class="text-white">300 K</span>
+                </div>
+                <input type="range" id="temp-slider" min="100" max="1000" value="300">
+            </div>
+
+            <button class="catalyst-btn" id="cat-btn" onclick="toggleCatalyst()">
+                <i class="fas fa-bolt"></i> INJECT CATALYST
+            </button>
+
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <div class="stat-val text-cyan-400" id="reactants-val">0</div>
+                    <div class="stat-lbl">Reactants</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-val text-yellow-400" id="products-val">0</div>
+                    <div class="stat-lbl">Products</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        /**
+         * SKILA.ai - Reaction Kinetics Simulator
+         * - Collision Theory: Reaction only if KE > Ea
+         * - Activation Energy visualization
+         * - Exothermic Flash effects
+         */
+
+        const canvas = document.getElementById('sim-canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+        let PARTICLES = [];
+        let FLASHES = []; // Visual effects
+
+        // Sim State
+        let TEMP = 300;
+        let CATALYST = false;
+
+        // Constants
+        const BASE_EA = 500; // Activation Energy Base
+        const CAT_EA = 200;  // Catalyst Activation Energy
+        let currentEa = BASE_EA;
+
+        // Colors
+        const COL_A = '#22D3EE'; // Cyan
+        const COL_B = '#E879F9'; // Magenta
+        const COL_P = '#FACC15'; // Gold (Product)
+
+        class Particle {
+            constructor(type, x, y) {
+                this.type = type; // 'A', 'B', or 'P'
+                this.x = x; this.y = y;
+                this.r = type === 'P' ? 8 : 6;
+                this.m = type === 'P' ? 2 : 1;
+
+                // Init Velocity based on Temp
+                const speed = (Math.random() * 0.5 + 0.5) * (TEMP / 300);
+                const angle = Math.random() * Math.PI * 2;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+            }
+
+            update() {
+                // Wall Bounce
+                if (this.x < this.r || this.x > width - this.r) this.vx *= -1;
+                if (this.y < this.r || this.y > height - this.r) this.vy *= -1;
+
+                this.x = Math.max(this.r, Math.min(width - this.r, this.x + this.vx));
+                this.y = Math.max(this.r, Math.min(height - this.r, this.y + this.vy));
+
+                // Temp enforcement (drag/boost)
+                const currentSpeedSq = this.vx * this.vx + this.vy * this.vy;
+                const targetSpeedSq = (TEMP / 100); // Rough correlation
+
+                // Soft nudge towards target temp speed
+                // This simulates the "Heat Bath"
+                const factor = 0.01;
+                if (currentSpeedSq < targetSpeedSq) {
+                    this.vx *= 1.01; this.vy *= 1.01;
+                } else {
+                    this.vx *= 0.99; this.vy *= 0.99;
+                }
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+
+                let col = this.type === 'A' ? COL_A : this.type === 'B' ? COL_B : COL_P;
+
+                // Glow
+                ctx.shadowColor = col;
+                ctx.shadowBlur = this.type === 'P' ? 20 : 10;
+                ctx.fillStyle = col;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Core
+                ctx.fillStyle = 'white';
+                ctx.beginPath(); ctx.arc(this.x - 2, this.y - 2, 2, 0, Math.PI * 2); ctx.fill();
+            }
+        }
+
+        // --- PHYSICS ENGINE ---
+        function updatePhysics() {
+            // Collision Check O(N^2) optimized
+            // Grid-based would be better but N=100 is fine
+
+            for (let i = 0; i < PARTICLES.length; i++) {
+                for (let j = i + 1; j < PARTICLES.length; j++) {
+                    const p1 = PARTICLES[i];
+                    const p2 = PARTICLES[j];
+
+                    const dx = p2.x - p1.x;
+                    const dy = p2.y - p1.y;
+                    const dSq = dx * dx + dy * dy;
+                    const radSum = p1.r + p2.r;
+
+                    if (dSq < radSum * radSum) {
+                        // COLLISION!
+                        const d = Math.sqrt(dSq);
+
+                        // calculate relative velocity
+                        const dvx = p2.vx - p1.vx;
+                        const dvy = p2.vy - p1.vy;
+                        const relVelSq = dvx * dvx + dvy * dvy; // Proportional to Kinetic Energy
+                        const KE = relVelSq * 100; // Arbitrary scaling to fit Ea units
+
+                        // Resolve elastic overlap
+                        const nx = dx / d;
+                        const ny = dy / d;
+                        const overlap = radSum - d;
+                        p1.x -= nx * overlap * 0.5; p1.y -= ny * overlap * 0.5;
+                        p2.x += nx * overlap * 0.5; p2.y += ny * overlap * 0.5;
+
+                        // Bounce (Elastic)
+                        // Simple 1D collision along normal
+                        const v1n = p1.vx * nx + p1.vy * ny;
+                        const v2n = p2.vx * nx + p2.vy * ny;
+
+                        // REACTION LOGIC
+                        // A + B -> P if Energy > Ea
+                        let reacted = false;
+                        if (p1.type !== p2.type &&
+                            ((p1.type === 'A' && p2.type === 'B') || (p1.type === 'B' && p2.type === 'A'))) {
+
+                            if (KE > currentEa) {
+                                // React!
+                                createProduct(p1, p2);
+                                // Since array modified, adjust indices
+                                // Actually safe to mark for removal and process later, but let's do splice carefully
+                                PARTICLES.splice(j, 1);
+                                PARTICLES.splice(i, 1);
+
+                                reacted = true;
+                                i--; // adjust outer loop
+                                break; // break inner loop
+                            }
+                        }
+
+                        // Impulse (if not reacted)
+                        if (!reacted) {
+                            const m1 = p1.m;
+                            const m2 = p2.m;
+
+                            const newV1n = (v1n * (m1 - m2) + 2 * m2 * v2n) / (m1 + m2);
+                            const newV2n = (v2n * (m2 - m1) + 2 * m1 * v1n) / (m1 + m2);
+
+                            p1.vx += (newV1n - v1n) * nx;
+                            p1.vy += (newV1n - v1n) * ny;
+                            p2.vx += (newV2n - v2n) * nx;
+                            p2.vy += (newV2n - v2n) * ny;
+                        }
+                    }
+                }
+            }
+        }
+
+        function createProduct(p1, p2) {
+            // New position (midpoint)
+            const x = (p1.x + p2.x) / 2;
+            const y = (p1.y + p2.y) / 2;
+            const p = new Particle('P', x, y);
+
+            // Conserve Momentum
+            p.vx = (p1.vx * p1.m + p2.vx * p2.m) / p.m;
+            p.vy = (p1.vy * p1.m + p2.vy * p2.m) / p.m;
+
+            PARTICLES.push(p);
+
+            // Visual Effect
+            FLASHES.push({ x: x, y: y, r: 10, life: 1.0 });
+        }
+
+        // --- GRAPH ENGINE ---
+        const gCan = document.getElementById('energy-graph');
+        const gCtx = gCan.getContext('2d');
+
+        function drawGraph() {
+            gCtx.clearRect(0, 0, 270, 150);
+
+            // Axes
+            gCtx.strokeStyle = '#475569'; gCtx.lineWidth = 2;
+            gCtx.beginPath();
+            gCtx.moveTo(30, 10); gCtx.lineTo(30, 130); gCtx.lineTo(260, 130);
+            gCtx.stroke();
+
+            // Energy Curve (Activation Hill)
+            gCtx.beginPath();
+            gCtx.moveTo(30, 100); // Reactants
+
+            // Hill Peak height depends on Ea
+            // Base Ea 500 = High hill. Cat Ea 200 = Low hill.
+            const peakH = 100 - (currentEa / 10);
+
+            gCtx.bezierCurveTo(100, 100, 135, peakH, 135, peakH); // Up
+            gCtx.bezierCurveTo(135, peakH, 170, 100, 240, 60); // Down to Products (Exothermic)
+
+            gCtx.strokeStyle = CATALYST ? '#10B981' : '#F59E0B'; // Green if calc, Orange if normal
+            gCtx.lineWidth = 3;
+            gCtx.stroke();
+
+            // Labels
+            gCtx.fillStyle = '#94A3B8'; gCtx.font = '10px Inter';
+            gCtx.fillText("Ea", 140, peakH - 5);
+            gCtx.fillText("Products", 210, 50);
+            gCtx.fillText("Reactants", 40, 120);
+
+            // Live Energy Dot (Average KE)
+            // Calc avg KE of system
+            let avgKE = 0;
+            PARTICLES.forEach(p => avgKE += (p.vx * p.vx + p.vy * p.vy));
+            avgKE /= (PARTICLES.length || 1);
+            avgKE *= 100; // Scale
+
+            // Map avgKE to Y position on the left
+            const dotY = 130 - Math.min(120, avgKE / 10); // Clamp
+
+            gCtx.fillStyle = '#22D3EE';
+            gCtx.beginPath(); gCtx.arc(30, dotY, 4, 0, Math.PI * 2); gCtx.fill();
+            // Trace line
+            gCtx.strokeStyle = 'rgba(34, 211, 238, 0.3)'; gCtx.setLineDash([2, 2]);
+            gCtx.beginPath(); gCtx.moveTo(30, dotY); gCtx.lineTo(260, dotY); gCtx.stroke(); gCtx.setLineDash([]);
+        }
+
+        // --- MAIN LOOP ---
+        function loop() {
+            // Resize check
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+
+            ctx.fillStyle = '#0F172A';
+            ctx.fillRect(0, 0, width, height);
+
+            // Heat Haze / Trails
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.2)';
+            ctx.fillRect(0, 0, width, height); // fake trail
+
+            // Particles
+            ctx.globalCompositeOperation = 'lighter'; // Additive blending
+            updatePhysics();
+            PARTICLES.forEach(p => { p.update(); p.draw(ctx); });
+            ctx.globalCompositeOperation = 'source-over';
+
+            // Flashes
+            FLASHES.forEach((f, i) => {
+                f.life -= 0.05;
+                f.r += 2;
+                ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 255, 255, ${f.life})`;
+                ctx.fill();
+                if (f.life <= 0) FLASHES.splice(i, 1);
+            });
+
+            // Graph Updates
+            drawGraph();
+
+            // Stats
+            let rCount = PARTICLES.filter(p => p.type !== 'P').length;
+            let pCount = PARTICLES.filter(p => p.type === 'P').length;
+            document.getElementById('reactants-val').innerText = rCount;
+            document.getElementById('products-val').innerText = pCount;
+
+            // Respawn reactants if low
+            if (rCount < 10) {
+                if (Math.random() > 0.9) PARTICLES.push(new Particle(Math.random() > 0.5 ? 'A' : 'B', Math.random() * width, Math.random() * height));
+            }
+
+            requestAnimationFrame(loop);
+        }
+
+        // --- CONTROLS ---
+        const slider = document.getElementById('temp-slider');
+        const tempDisp = document.getElementById('temp-display');
+
+        slider.addEventListener('input', (e) => {
+            TEMP = parseInt(e.target.value);
+            tempDisp.innerText = TEMP + " K";
+        });
+
+        window.toggleCatalyst = () => {
+            CATALYST = !CATALYST;
+            currentEa = CATALYST ? CAT_EA : BASE_EA;
+            const btn = document.getElementById('cat-btn');
+            if (CATALYST) btn.classList.add('active');
+            else btn.classList.remove('active');
+        };
+
+        // Init
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+
+        // Spawn
+        for (let i = 0; i < 40; i++) PARTICLES.push(new Particle('A', Math.random() * width, Math.random() * height));
+        for (let i = 0; i < 40; i++) PARTICLES.push(new Particle('B', Math.random() * width, Math.random() * height));
+
+        loop();
+
+    </script>
+</body>
+
+</html>

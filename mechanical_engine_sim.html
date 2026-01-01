@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mechanical: Internal Combustion Kinematics</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Teko:wght@300;600&display=swap');
+
+        :root {
+            --bg: #0F172A;
+            --panel: rgba(15, 23, 42, 0.95);
+            --metal: #94A3B8;
+            --cyan: #22D3EE;
+            --warn: #EF4444;
+            --intake: #60A5FA;
+            --comp: #FACC15;
+            --power: #EF4444;
+            --exhaust: #475569;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: var(--bg);
+            font-family: 'Share Tech Mono', monospace;
+            color: var(--metal);
+            user-select: none;
+        }
+
+        /* Blueprint Grid */
+        body::before {
+            content: " ";
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background:
+                linear-gradient(rgba(34, 211, 238, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(34, 211, 238, 0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            padding: 20px;
+            box-sizing: border-box;
+            justify-content: space-between;
+        }
+
+        .hud-panel {
+            background: var(--panel);
+            border: 1px solid rgba(34, 211, 238, 0.2);
+            padding: 20px;
+            pointer-events: auto;
+            backdrop-filter: blur(5px);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            width: 300px;
+        }
+
+        h1 {
+            margin: 0;
+            font-family: 'Teko', sans-serif;
+            font-size: 28px;
+            color: var(--cyan);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            border-bottom: 1px solid rgba(34, 211, 238, 0.3);
+            padding-bottom: 5px;
+        }
+
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+        }
+
+        .metric-val {
+            color: #fff;
+            font-weight: bold;
+        }
+
+        input[type=range] {
+            width: 100%;
+            margin-top: 5px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: #334155;
+            height: 4px;
+            border-radius: 2px;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 12px;
+            height: 12px;
+            background: var(--cyan);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 10px var(--cyan);
+        }
+
+        .status-badge {
+            background: #1e293b;
+            color: #fff;
+            padding: 5px;
+            text-align: center;
+            font-family: 'Teko';
+            font-size: 24px;
+            border: 1px solid #334155;
+            transition: all 0.1s;
+        }
+
+        #pv-container {
+            width: 100%;
+            height: 200px;
+            background: #000;
+            border: 1px solid #334155;
+            position: relative;
+        }
+
+        #pv-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Blueprint lines */
+        .guide-line {
+            position: absolute;
+            border: 1px dashed rgba(34, 211, 238, 0.2);
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="main-canvas"></canvas>
+
+    <div id="ui-layer">
+        <!-- LEFT: ENGINE CONTROLS -->
+        <div class="hud-panel">
+            <h1>Engine Control</h1>
+
+            <div>
+                <div class="metric-row"><label>THROTTLE (RPM)</label> <span class="metric-val" id="rpm-val">1000</span>
+                </div>
+                <input type="range" id="rpm-slider" min="600" max="6000" value="1000">
+            </div>
+
+            <div>
+                <div class="metric-row"><label>IGNITION TIMING</label> <span class="metric-val"
+                        id="timing-val">0°</span></div>
+                <input type="range" id="timing-slider" min="-20" max="20" value="0">
+                <div style="font-size:10px; color:#64748b; margin-top:2px;">Advanced (-) / Retarded (+)</div>
+            </div>
+
+            <div style="margin-top: 10px;">
+                <div class="metric-row"><label>COMPRESSION RATIO</label> <span class="metric-val">10.5:1</span></div>
+            </div>
+
+            <div style="margin-top:auto">
+                <div id="stroke-badge" class="status-badge" style="color:var(--intake)">INTAKE</div>
+            </div>
+        </div>
+
+        <!-- RIGHT: ANALYSIS -->
+        <div class="hud-panel">
+            <h1>Cycle Analysis</h1>
+
+            <div id="pv-container">
+                <canvas id="pv-canvas"></canvas>
+            </div>
+            <div class="metric-row" style="justify-content:center; color:#64748b; font-size:10px;">PRESSURE-VOLUME
+                DIAGRAM</div>
+
+            <div style="margin-top: 10px;">
+                <div class="metric-row"><label>DISPLACEMENT</label> <span class="metric-val">2.0 L</span></div>
+                <div class="metric-row"><label>WORK (AREA)</label> <span class="metric-val" id="work-val">0 J</span>
+                </div>
+                <div class="metric-row"><label>EFFICIENCY</label> <span class="metric-val" id="eff-val">0%</span></div>
+            </div>
+
+            <button onclick="toggleWireframe()"
+                style="margin-top:20px; background:var(--cyan); border:none; padding:10px; font-family:'Share Tech Mono'; font-weight:bold; cursor:pointer;">TOGGLE
+                VIEW MODE</button>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * =================================================================================
+         *  INTERNAL COMBUSTION KINEMATICS ENGINE
+         *  (c) 2025 Deepmind Agentic Mode
+         *  
+         *  Slider-Crank Kinematics & PV Diagram Simulation
+         * =================================================================================
+         */
+
+        const CONSTANTS = {
+            CRANK_R: 60,   // Crank Radius (mm pixels)
+            ROD_L: 180,    // Connecting Rod Length
+            BORE: 140,     // Cylinder Width
+            PISTON_H: 80,  // Piston Height
+            PIN_OFFSET: 0, // Wrist pin offset
+            CENTER_X: window.innerWidth * 0.4,
+            CENTER_Y: window.innerHeight * 0.6
+        };
+
+        const STATE = {
+            rpm: 1000,
+            crankAngle: 0, // Degrees 0-720
+            stroke: 'INTAKE', // INTAKE, COMPRESSION, POWER, EXHAUST
+            timing: 0, // Degrees adjustment
+            wireframe: false,
+            pistonY: 0,
+            volume: 0,
+            pressure: 1
+        };
+
+        // ---------------------------------------------------------------------------------
+        // MODULE 1: KINEMATICS
+        // ---------------------------------------------------------------------------------
+        class Kinematics {
+            static getPosition(thetaRad) {
+                const r = CONSTANTS.CRANK_R;
+                const l = CONSTANTS.ROD_L;
+                const sinT = Math.sin(thetaRad);
+                const cosT = Math.cos(thetaRad);
+
+                // Exact Slider-Crank Equation
+                // x is distance from crank center to wrist pin
+                // x = r cos(theta) + sqrt(l^2 - r^2 sin^2(theta))
+                const term1 = r * cosT;
+                const term2 = Math.sqrt(l * l - r * r * sinT * sinT);
+                return term1 + term2;
+            }
+
+            // Get Piston Top Y position (screen coords)
+            static getScreenY(thetaDeg) {
+                const rad = (thetaDeg - 90) * Math.PI / 180; // -90 offset so 0 is Top Dead Center visual?
+                // Actually let's keep standard math: 0 = TDC (Top), 180 = BDC (Bottom)
+                // In Canvas Y is down.
+                // Standard eq gives Max X at 0 deg. 
+                // Let's map 0 deg to -Y (Up).
+                // thetaRad = (angle - 90) * PI/180
+
+                const r = CONSTANTS.CRANK_R;
+                const x = this.getPosition((thetaDeg - 90) * Math.PI / 180);
+                // x is positive distance UP from crank center
+                // So ScreenY = CenterY - x
+                return CONSTANTS.CENTER_Y - x;
+            }
+        }
+
+        // ---------------------------------------------------------------------------------
+        // MODULE 2: CYCLE LOGIC & PARTICLES
+        // ---------------------------------------------------------------------------------
+        class GasSystem {
+            constructor() {
+                this.particles = [];
+                for (let i = 0; i < 300; i++) this.particles.push({
+                    x: (Math.random() - 0.5) * CONSTANTS.BORE,
+                    y: Math.random() * 200,
+                    vx: 0, vy: 0
+                });
+            }
+
+            update(pistonRelY, stroke) {
+                // pistonRelY = distance from Top of Cylinder Head to Piston Top
+                // This is the Chamber Height
+                const chamberH = Math.max(10, pistonRelY);
+
+                for (let p of this.particles) {
+                    // Stroke Logic
+                    if (stroke === 'INTAKE') {
+                        // Suck in
+                        p.vx += (Math.random() - 0.5);
+                        p.vy += Math.random() * 2; // Flow down
+                        if (p.y > chamberH) p.y = 0; // Recycle top
+                    } else if (stroke === 'EXHAUST') {
+                        // Push out
+                        p.vy -= 5;
+                        if (p.y < 0) p.y = chamberH; // Recycle bottom (visual hack)
+                    } else if (stroke === 'COMPRESSION' || stroke === 'POWER') {
+                        // Random motion
+                        const temp = stroke === 'POWER' ? 10 : 2;
+                        p.vx += (Math.random() - 0.5) * temp;
+                        p.vy += (Math.random() - 0.5) * temp;
+                    }
+
+                    // Bounds
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.vx *= 0.9; p.vy *= 0.9;
+
+                    // Walls
+                    if (p.x < -CONSTANTS.BORE / 2) p.x = -CONSTANTS.BORE / 2;
+                    if (p.x > CONSTANTS.BORE / 2) p.x = CONSTANTS.BORE / 2;
+                    if (p.y < 0) p.y = 0;
+                    if (p.y > chamberH) p.y = chamberH;
+                }
+            }
+
+            draw(ctx, cx, headY) {
+                ctx.globalCompositeOperation = 'lighter';
+                let col = '#fff';
+                if (STATE.stroke === 'INTAKE') col = '#60A5FA';
+                if (STATE.stroke === 'COMPRESSION') col = '#FACC15';
+                if (STATE.stroke === 'POWER') col = '#EF4444';
+                if (STATE.stroke === 'EXHAUST') col = '#475569';
+
+                ctx.fillStyle = col;
+                for (let p of this.particles) {
+                    ctx.beginPath();
+                    ctx.arc(cx + p.x, headY + p.y, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.globalCompositeOperation = 'source-over';
+            }
+        }
+
+        // ---------------------------------------------------------------------------------
+        // MODULE 3: RENDERER
+        // ---------------------------------------------------------------------------------
+        const canvas = document.getElementById('main-canvas');
+        const ctx = canvas.getContext('2d');
+        const gas = new GasSystem();
+
+        // PV Graph
+        const pvCanvas = document.getElementById('pv-canvas');
+        const pvCtx = pvCanvas.getContext('2d');
+        const pvData = []; // History points
+
+        function drawEngine() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            CONSTANTS.CENTER_X = canvas.width * 0.4;
+            CONSTANTS.CENTER_Y = canvas.height * 0.6;
+
+            const cx = CONSTANTS.CENTER_X;
+            const cy = CONSTANTS.CENTER_Y;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Calculate Positions
+            const rad = (STATE.crankAngle - 90) * Math.PI / 180;
+            const crankPinX = cx + Math.cos(rad) * CONSTANTS.CRANK_R;
+            const crankPinY = cy + Math.sin(rad) * CONSTANTS.CRANK_R; // Y is down
+
+            // Piston Y (Kinematics)
+            const pistonY = cy - Kinematics.getPosition(rad); // Upwards is neg Y
+
+            // Chamber Top (Head)
+            const tdcY = cy - (CONSTANTS.ROD_L + CONSTANTS.CRANK_R);
+            const headY = tdcY - 20; // Clearance
+
+            // Draw Cylinder
+            ctx.fillStyle = '#1e293b';
+            const cylH = (CONSTANTS.ROD_L + CONSTANTS.CRANK_R) * 2;
+            ctx.fillRect(cx - CONSTANTS.BORE / 2 - 10, headY, CONSTANTS.BORE + 20, cylH);
+
+            // Draw Gas Inside
+            // The active height is (pistonY - headY)
+            gas.update(pistonY - headY, STATE.stroke);
+            gas.draw(ctx, cx, headY);
+
+            // Draw Piston
+            ctx.fillStyle = STATE.wireframe ? 'rgba(148, 163, 184, 0.2)' : '#94A3B8';
+            ctx.strokeStyle = '#22D3EE';
+            ctx.lineWidth = 2;
+            ctx.fillRect(cx - CONSTANTS.BORE / 2, pistonY, CONSTANTS.BORE, CONSTANTS.PISTON_H);
+            ctx.strokeRect(cx - CONSTANTS.BORE / 2, pistonY, CONSTANTS.BORE, CONSTANTS.PISTON_H);
+
+            // Draw Con Rod
+            ctx.beginPath();
+            ctx.moveTo(cx, pistonY + CONSTANTS.PISTON_H / 2); // Wrist Pin
+            ctx.lineTo(crankPinX, crankPinY); // Crank Pin
+            ctx.strokeStyle = '#64748b';
+            ctx.lineWidth = 14;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+            // Highlight
+            ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 4; ctx.stroke();
+
+            // Draw Crank
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(crankPinX, crankPinY);
+            ctx.strokeStyle = '#475569';
+            ctx.lineWidth = 10;
+            ctx.stroke();
+
+            // Crank Weight
+            ctx.beginPath();
+            ctx.arc(cx, cy, 40, 0, Math.PI * 2);
+            ctx.fillStyle = '#334155';
+            ctx.fill();
+            ctx.strokeStyle = '#22D3EE'; ctx.lineWidth = 1; ctx.stroke();
+
+            // Valves & Spark
+            drawHead(cx, headY);
+        }
+
+        function drawHead(cx, y) {
+            // Valves
+            const valveW = 40;
+            const openAmt = 15;
+
+            let intakeOpen = STATE.stroke === 'INTAKE' ? openAmt : 0;
+            let exhaustOpen = STATE.stroke === 'EXHAUST' ? openAmt : 0;
+
+            // Intake Valve (Left)
+            ctx.fillStyle = '#ccc';
+            ctx.fillRect(cx - 50, y - 20 + intakeOpen, valveW, 5);
+            ctx.beginPath(); ctx.moveTo(cx - 30, y - 20 + intakeOpen); ctx.lineTo(cx - 30, y - 60); ctx.stroke();
+
+            // Exhaust Valve (Right)
+            ctx.fillStyle = '#ccc';
+            ctx.fillRect(cx + 10, y - 20 + exhaustOpen, valveW, 5);
+            ctx.beginPath(); ctx.moveTo(cx + 30, y - 20 + exhaustOpen); ctx.lineTo(cx + 30, y - 60); ctx.stroke();
+
+            // Spark Plug
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(cx - 5, y - 25, 10, 20);
+
+            // Flash?
+            if (STATE.stroke === 'POWER' && STATE.crankAngle % 720 < 380) { // Just fired
+                ctx.shadowBlur = 50; ctx.shadowColor = '#fff';
+                ctx.fillStyle = '#fff';
+                ctx.beginPath(); ctx.arc(cx, y, 10, 0, Math.PI * 2); ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        function updatePhysics() {
+            // Advance Crank
+            // RPM to deg per frame (60fps)
+            // Real-time: 1000 RPM = 100 deg/frame (Too fast for visual)
+            // We apply a 0.1 slow-down factor for observability
+            const degPerFrame = ((STATE.rpm / 60) * 360 / 60) * 0.1;
+            STATE.crankAngle = (STATE.crankAngle + degPerFrame) % 720;
+
+            // Determine Stroke (0-720)
+            // 0-180: Intake (Down)
+            // 180-360: Compression (Up)
+            // 360-540: Power (Down)
+            // 540-720: Exhaust (Up)
+
+            let s = '';
+            const ca = STATE.crankAngle;
+            if (ca < 180) s = 'INTAKE';
+            else if (ca < 360) s = 'COMPRESSION';
+            else if (ca < 540) s = 'POWER';
+            else s = 'EXHAUST';
+
+            STATE.stroke = s;
+
+            // Update UI
+            const badge = document.getElementById('stroke-badge');
+            badge.innerText = s;
+            if (s === 'INTAKE') { badge.style.color = '#60A5FA'; badge.style.borderColor = '#60A5FA'; }
+            if (s === 'COMPRESSION') { badge.style.color = '#FACC15'; badge.style.borderColor = '#FACC15'; }
+            if (s === 'POWER') { badge.style.color = '#EF4444'; badge.style.borderColor = '#EF4444'; }
+            if (s === 'EXHAUST') { badge.style.color = '#94A3B8'; badge.style.borderColor = '#94A3B8'; }
+
+            // Calc PV
+            // V varies from 1 (BDC) to ~0.1 (TDC) (Compression Ratio)
+            const rad = (STATE.crankAngle - 90) * Math.PI / 180;
+            const x = Kinematics.getPosition(rad);
+            // Normalize x: (r+l) is TDC (Max), (l-r) is BDC (Min) ? 
+            // Wait, eqn gives dist from center.
+            // Max stretch is l+r (TDC). Min is l-r (BDC).
+            // Actually, in standard orientation (up), TDC is farthest from center.
+            const tdcDist = CONSTANTS.ROD_L + CONSTANTS.CRANK_R;
+            const bdcDist = CONSTANTS.ROD_L - CONSTANTS.CRANK_R;
+
+            // Vol Fraction (0 at TDC, 1 at BDC)
+            // dist increases as we go to TDC? Eqn: x = r cos theta...
+            // at 0 deg (TDC), x = r + l.
+            // at 180 deg (BDC), x = -r + l. 
+            // So x is large at TDC.
+            const volRel = (tdcDist - x) / (tdcDist - bdcDist);
+            // Now 0 at TDC, 1 at BDC.
+            // Add clearance vol for 10:1 ratio.
+            STATE.volume = 1 + volRel * 9; // Vol 1 to 10
+
+            // Pressure P = nRT/V simplified
+            // Intake: P ~ 1
+            // Comp: P increases adiabatically P * V^gamma = C
+            // Power: P spikes then drops
+            // Exhaust: P ~ 1
+
+            if (s === 'INTAKE') STATE.pressure = 1;
+            else if (s === 'COMPRESSION') {
+                // Adiabatic: P = P0 * (V0/V)^1.4
+                // Start P=1 at V=10.
+                STATE.pressure = 1 * Math.pow(10 / STATE.volume, 1.3);
+            }
+            else if (s === 'POWER') {
+                // Combustion! Spikes at TDC (360).
+                // Timing adjusts spike peak.
+                const peakP = 50; // bar
+                // Expansion
+                STATE.pressure = peakP * Math.pow(1 / STATE.volume, 1.3);
+            }
+            else if (s === 'EXHAUST') STATE.pressure = 1.2;
+
+            updatePVGraph(STATE.volume, STATE.pressure);
+        }
+
+        function updatePVGraph(v, p) {
+            // Store point
+            pvData.push({ x: v, y: p, s: STATE.stroke });
+            if (pvData.length > 300) pvData.shift();
+
+            // Render Graph
+            const w = pvCanvas.width = pvCanvas.clientWidth;
+            const h = pvCanvas.height = pvCanvas.clientHeight;
+
+            pvCtx.clearRect(0, 0, w, h);
+            pvCtx.strokeStyle = '#334155';
+            pvCtx.strokeRect(0, 0, w, h);
+
+            // Plot
+            // X axis: V (1 to 10) -> Map to (0, w)
+            // Y axis: P (0 to 60) -> Map to (h, 0)
+
+            pvCtx.lineWidth = 2;
+            for (let i = 0; i < pvData.length - 1; i++) {
+                const pt1 = pvData[i];
+                const pt2 = pvData[i + 1];
+
+                pvCtx.beginPath();
+                // Color by stroke
+                if (pt1.s === 'INTAKE') pvCtx.strokeStyle = '#60A5FA';
+                else if (pt1.s === 'COMPRESSION') pvCtx.strokeStyle = '#FACC15';
+                else if (pt1.s === 'POWER') pvCtx.strokeStyle = '#EF4444';
+                else pvCtx.strokeStyle = '#94A3B8';
+
+                const mapX = (val) => (val - 1) / 9 * (w - 20) + 10;
+                const mapY = (val) => h - (val / 60 * (h - 20)) - 10;
+
+                pvCtx.moveTo(mapX(pt1.x), mapY(pt1.y));
+                pvCtx.lineTo(mapX(pt2.x), mapY(pt2.y));
+                pvCtx.stroke();
+            }
+
+            // Current Dot
+            const cx = (v - 1) / 9 * (w - 20) + 10;
+            const cy = h - (p / 60 * (h - 20)) - 10;
+            pvCtx.fillStyle = '#fff';
+            pvCtx.beginPath(); pvCtx.arc(cx, cy, 3, 0, Math.PI * 2); pvCtx.fill();
+        }
+
+        // Loop
+        function loop() {
+            updatePhysics();
+            drawEngine();
+            requestAnimationFrame(loop);
+        }
+
+        // Controls
+        document.getElementById('rpm-slider').oninput = (e) => {
+            STATE.rpm = parseInt(e.target.value);
+            document.getElementById('rpm-val').innerText = STATE.rpm;
+        };
+
+        document.getElementById('timing-slider').oninput = (e) => {
+            STATE.timing = parseInt(e.target.value);
+            document.getElementById('timing-val').innerText = STATE.timing + "°";
+        };
+
+        window.toggleWireframe = () => { STATE.wireframe = !STATE.wireframe; };
+
+        loop();
+
+    </script>
+</body>
+
+</html>

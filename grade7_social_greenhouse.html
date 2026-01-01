@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Greenhouse Architect</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .ui {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 400px;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #555;
+            color: white;
+            text-align: center;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="ui">
+        <label>CO2 Level (Atmosphere Thickness)</label>
+        <input type="range" id="co2" min="0" max="100" value="10" class="w-full mt-2">
+        <div id="temp" class="text-2xl mt-2 font-bold text-green-400">Temp: 14°C</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const slider = document.getElementById('co2');
+        const tempDisp = document.getElementById('temp');
+
+        let width, height;
+        let RAYS = [];
+        let CO2_LEVEL = 10;
+        let TEMP = 14;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            EARTH_Y = height - 150;
+        }
+        window.addEventListener('resize', resize);
+
+        // Sim Constants
+        let EARTH_Y = 600;
+
+        slider.addEventListener('input', e => { CO2_LEVEL = parseInt(e.target.value); });
+
+        resize();
+
+        function loop() {
+            // Spawn Rays (Sunlight)
+            if (Math.random() > 0.8) {
+                RAYS.push({
+                    x: Math.random() * width, y: -50,
+                    vx: 0, vy: 5,
+                    type: 'sun', // sun, infrared
+                    active: true
+                });
+            }
+
+            // Logic: Temperature rises with trapped rays
+            let trapped = RAYS.filter(r => r.type === 'infrared' && r.y < EARTH_Y && r.y > EARTH_Y - (100 + CO2_LEVEL * 2)).length;
+            // Target temp
+            let targetT = 14 + (CO2_LEVEL / 100) * 10 + (trapped * 0.5);
+            TEMP += (targetT - TEMP) * 0.05;
+
+            // Update UI
+            tempDisp.innerText = `Temp: ${TEMP.toFixed(1)}°C`;
+            // Color scale
+            if (TEMP > 20) tempDisp.className = "text-2xl mt-2 font-bold text-red-500";
+            else tempDisp.className = "text-2xl mt-2 font-bold text-green-400";
+
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw Space
+            // Stars
+
+            // Draw Atmosphere Dome
+            const thickness = 50 + CO2_LEVEL * 2;
+            const skyColor = `rgba(100, 200, 255, ${0.1 + CO2_LEVEL / 200})`;
+            ctx.fillStyle = skyColor;
+            ctx.beginPath();
+            ctx.rect(0, EARTH_Y - thickness, width, thickness);
+            ctx.fill();
+
+            // Atmosphere Cloud Haze
+            if (CO2_LEVEL > 50) {
+                ctx.fillStyle = `rgba(100,100,100, ${(CO2_LEVEL - 50) / 200})`;
+                ctx.fillRect(0, EARTH_Y - thickness, width, thickness);
+            }
+
+            // Draw Earth
+            // Ice Caps State
+            // If temp > 18, Ice melts
+            const melt = Math.max(0, Math.min(1, (TEMP - 15) / 10)); // 0 to 1
+
+            ctx.fillStyle = '#10b981'; // Land
+            ctx.fillRect(0, EARTH_Y, width, 200);
+
+            // Ice Cap (Left and Right)
+            const iceW = 300 * (1 - melt);
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, EARTH_Y, iceW, 200);
+            ctx.fillRect(width - iceW, EARTH_Y, iceW, 200);
+
+            // Ocean (rising?)
+            if (melt > 0.5) {
+                ctx.fillStyle = 'rgba(59, 130, 246, 0.5)';
+                ctx.fillRect(0, EARTH_Y + 180 - melt * 20, width, 50);
+            }
+
+            // Rays
+            for (let i = RAYS.length - 1; i >= 0; i--) {
+                let r = RAYS[i];
+                r.x += r.vx; r.y += r.vy;
+
+                // Draw
+                if (r.type === 'sun') {
+                    ctx.strokeStyle = '#facc15'; ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.moveTo(r.x, r.y); ctx.lineTo(r.x - r.vx * 2, r.y - r.vy * 2); ctx.stroke();
+
+                    // Hit Earth
+                    if (r.y >= EARTH_Y) {
+                        // Absorb and re-emit Infrared
+                        r.type = 'infrared';
+                        r.vy = -2; // Slow rise
+                        r.vx = (Math.random() - 0.5) * 2;
+
+                        // Bounce off ice? Ice reflects Sun directly! (Albedo)
+                        // If hit ice
+                        if (r.x < iceW || r.x > width - iceW) {
+                            // Reflect Active Sun
+                            r.type = 'sun';
+                            r.vy = -5; // Fast bounce
+                        }
+                    }
+                } else {
+                    // Infrared
+                    ctx.fillStyle = '#ef4444';
+                    ctx.beginPath(); ctx.arc(r.x, r.y, 3, 0, Math.PI * 2); ctx.fill();
+
+                    // Wavy motion helper
+                    r.x += Math.sin(r.y * 0.1);
+
+                    // Atmosphere Trap Check
+                    const atmTop = EARTH_Y - thickness;
+                    if (r.y < atmTop && r.y > atmTop - 10) {
+                        // Check prob based on CO2
+                        // High CO2 -> High bounce back
+                        if (Math.random() < (CO2_LEVEL / 120)) {
+                            r.vy = Math.abs(r.vy); // Bounce down
+                            // Trapped heat
+                        }
+                    }
+
+                    // Exit space
+                    if (r.y < -100) RAYS.splice(i, 1);
+                }
+            }
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+
+    </script>
+</body>
+
+</html>

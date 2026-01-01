@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Chaos Theory Engine - Dynamics Lab</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <style>
+        /* 
+         * =========================================
+         *  GLOBAL STYLES & TYPOGRAPHY
+         * =========================================
+         */
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;700&family=Rajdhani:wght@400;600;700&display=swap');
+
+        :root {
+            --bg-void: #000000;
+            --glass-panel: rgba(20, 20, 35, 0.6);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --accent-cyan: #00f3ff;
+            --accent-magenta: #ff00ff;
+            --accent-yellow: #ffee00;
+            --text-main: #e2e8f0;
+            --text-muted: #94a3b8;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: var(--bg-void);
+            font-family: 'Rajdhani', sans-serif;
+            color: var(--text-main);
+            user-select: none;
+            /* No selection allowed during drag */
+        }
+
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        /* 
+         * =========================================
+         *  HUD & UI LAYER
+         * =========================================
+         */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            display: grid;
+            grid-template-areas:
+                "header stats"
+                "controls graph"
+                "controls footer";
+            grid-template-columns: 350px 1fr;
+            grid-template-rows: auto 1fr auto;
+            gap: 1rem;
+            padding: 1.5rem;
+            box-sizing: border-box;
+            z-index: 10;
+        }
+
+        /* HEADER */
+        .hud-header {
+            grid-area: header;
+            pointer-events: auto;
+            background: var(--glass-panel);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            padding: 1.5rem;
+            border-radius: 4px;
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.1);
+            border-left: 4px solid var(--accent-cyan);
+        }
+
+        h1 {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.5rem;
+            margin: 0;
+            color: #fff;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px var(--accent-cyan);
+        }
+
+        .subtitle {
+            font-size: 0.85rem;
+            color: var(--accent-cyan);
+            margin-top: 5px;
+            font-weight: 600;
+        }
+
+        /* CONTROLS PANEL */
+        .hud-controls {
+            grid-area: controls;
+            pointer-events: auto;
+            background: var(--glass-panel);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            padding: 1.5rem;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            align-self: start;
+        }
+
+        .section-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            border-bottom: 1px solid var(--glass-border);
+            padding-bottom: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        /* CYBER SLIDER */
+        input[type=range] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 10px;
+            background: var(--accent-magenta);
+            margin-top: -7px;
+            border: 1px solid #fff;
+            box-shadow: 0 0 8px var(--accent-magenta);
+            cursor: pointer;
+        }
+
+        /* BUTTONS */
+        .btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--accent-cyan);
+            color: var(--accent-cyan);
+            padding: 0.8rem;
+            font-family: 'JetBrains Mono';
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            background: var(--accent-cyan);
+            color: #000;
+            box-shadow: 0 0 15px var(--accent-cyan);
+        }
+
+        .btn.butterfly {
+            border-color: var(--accent-yellow);
+            color: var(--accent-yellow);
+        }
+
+        .btn.butterfly:hover {
+            background: var(--accent-yellow);
+            color: #000;
+            box-shadow: 0 0 15px var(--accent-yellow);
+        }
+
+        /* GRAPH OVERLAY */
+        .hud-graph {
+            grid-area: graph;
+            justify-self: end;
+            align-self: start;
+            width: 300px;
+            height: 150px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid var(--glass-border);
+            padding: 10px;
+            position: relative;
+        }
+
+        .hud-graph h3 {
+            position: absolute;
+            top: 5px;
+            left: 10px;
+            margin: 0;
+            font-size: 10px;
+            font-family: 'JetBrains Mono';
+            color: #fff;
+            opacity: 0.5;
+        }
+
+        /* FOOTER STATS */
+        .hud-footer {
+            grid-area: footer;
+            font-family: 'JetBrains Mono';
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            justify-self: end;
+            text-align: right;
+        }
+
+        .highlight-val {
+            color: var(--accent-cyan);
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- 
+      =========================================
+       RENDERING SURFACES
+      =========================================
+      1. Trail Canvas: Persistent drawing (fade effect)
+      2. Main Canvas: Rods, masses, UI elements (cleared every frame)
+    -->
+    <canvas id="trail-canvas"></canvas>
+    <canvas id="main-canvas"></canvas>
+
+    <!-- UI OVERLAY -->
+    <div id="ui-layer">
+
+        <div class="hud-header">
+            <h1>Chaos Theory Engine</h1>
+            <div class="subtitle">RK4 INTEGRATION // SENSITIVE DEPENDENCE</div>
+        </div>
+
+        <div class="hud-controls">
+
+            <div class="section-title">Initial Conditions</div>
+            <div class="control-group">
+                <p style="font-size: 0.8rem; color: #aaa;">Drag the masses on screen to set start angles.</p>
+                <button class="btn" id="btn-reset"><i class="fas fa-undo"></i> Reset System</button>
+            </div>
+
+            <div class="section-title">System Parameters</div>
+            <div class="control-group">
+                <label>Gravity <span class="highlight-val" id="val-g">1.0</span></label>
+                <input type="range" min="0" max="3" step="0.1" value="1.0" id="sli-g">
+            </div>
+
+            <div class="control-group">
+                <label>Damping <span class="highlight-val" id="val-d">0.0</span></label>
+                <input type="range" min="0" max="0.05" step="0.001" value="0.0" id="sli-d">
+            </div>
+
+            <div class="control-group">
+                <label>Mass Ratio (M2/M1) <span class="highlight-val" id="val-m">1.0</span></label>
+                <input type="range" min="0.1" max="5" step="0.1" value="1.0" id="sli-m">
+            </div>
+
+            <div class="section-title">The Butterfly Test</div>
+            <div class="control-group">
+                <button class="btn butterfly" id="btn-butterfly"><i class="fas fa-random"></i> Spawn Shadow (Δ
+                    0.001)</button>
+                <p style="font-size: 0.75rem; margin-top:5px; color:#fee;">
+                    Target: Demonstrate divergence of trajectories.
+                </p>
+            </div>
+
+            <div class="section-title">Visuals</div>
+            <div class="control-group">
+                <label>Trail Persistence</label>
+                <input type="range" min="0" max="1" step="0.05" value="0.1" id="sli-trail">
+            </div>
+
+        </div>
+
+        <div class="hud-graph">
+            <h3>ENERGY (T+V)</h3>
+            <canvas id="energy-graph" width="280" height="130"></canvas>
+        </div>
+
+        <div class="hud-footer">
+            RUNGE-KUTTA 4 SOLVER ACTIVE<br>
+            TIMESTEP: <span class="highlight-val">0.016s</span><br>
+            FPS: <span class="highlight-val" id="fps-disp">60</span>
+        </div>
+
+    </div>
+
+    <!-- 
+        =========================================
+         SIMULATION CORE ENGINE
+        =========================================
+    -->
+    <script>
+        /**
+         * THE CHAOS THEORY ENGINE
+         * An implementation of the Double Pendulum utilizing Lagrangian Mechanics
+         * solved via Runge-Kutta 4th Order Numerical Integration.
+         */
+
+        // ------------------------------------------------------------------
+        // MATH UTILITIES
+        // ------------------------------------------------------------------
+        const PI = Math.PI;
+        const G_CONST = 9.81;
+
+        class Vector2 {
+            constructor(x, y) { this.x = x; this.y = y; }
+            add(v) { return new Vector2(this.x + v.x, this.y + v.y); }
+            sub(v) { return new Vector2(this.x - v.x, this.y - v.y); }
+            scale(s) { return new Vector2(this.x * s, this.y * s); }
+            dist(v) { return Math.hypot(this.x - v.x, this.y - v.y); }
+        }
+
+        // ------------------------------------------------------------------
+        // PHYSICS ENGINE (RK4)
+        // ------------------------------------------------------------------
+        /*
+          State Vector: [theta1, omega1, theta2, omega2]
+          Why RK4?
+          Euler: y_n+1 = y_n + h * f(t, y_n)  <- Error O(h^2), drift is huge.
+          RK4: 4 samples per step. Error O(h^5). Energy conservative for much longer.
+        */
+
+        class DoublePendulum {
+            constructor(r1, r2, m1, m2, a1, a2, color) {
+                this.r1 = r1; // Length 1
+                this.r2 = r2; // Length 2
+                this.m1 = m1; // Mass 1
+                this.m2 = m2; // Mass 2
+
+                // State: Angle (theta), Angular Velocity (omega)
+                this.a1 = a1;
+                this.a2 = a2;
+                this.v1 = 0; // Omega 1
+                this.v2 = 0; // Omega 2
+
+                this.color = color;
+                this.history = []; // For trail rendering if needed (we use canvas fade mostly)
+                this.active = true;
+            }
+
+            // The equations of motion for Double Pendulum
+            // Returns derivative vector [a1', v1', a2', v2']
+            getDerivatives(state, g, damping) {
+                const a1 = state[0];
+                const v1 = state[1];
+                const a2 = state[2];
+                const v2 = state[3];
+
+                const num1 = -g * (2 * this.m1 + this.m2) * Math.sin(a1);
+                const num2 = -this.m2 * g * Math.sin(a1 - 2 * a2);
+                const num3 = -2 * Math.sin(a1 - a2) * this.m2;
+                const num4 = v2 * v2 * this.r2 + v1 * v1 * this.r1 * Math.cos(a1 - a2);
+                const den1 = this.r1 * (2 * this.m1 + this.m2 - this.m2 * Math.cos(2 * a1 - 2 * a2));
+
+                const accel1 = (num1 + num2 + num3 * num4) / den1 - (damping * v1);
+
+                const num5 = 2 * Math.sin(a1 - a2);
+                const num6 = (v1 * v1 * this.r1 * (this.m1 + this.m2));
+                const num7 = g * (this.m1 + this.m2) * Math.cos(a1);
+                const num8 = v2 * v2 * this.r2 * this.m2 * Math.cos(a1 - a2);
+                const den2 = this.r2 * (2 * this.m1 + this.m2 - this.m2 * Math.cos(2 * a1 - 2 * a2));
+
+                const accel2 = (num5 * (num6 + num7 + num8)) / den2 - (damping * v2);
+
+                return [v1, accel1, v2, accel2];
+            }
+
+            // Runge-Kutta 4 Integration Step
+            update(dt, g, damping) {
+                const state = [this.a1, this.v1, this.a2, this.v2];
+
+                // k1
+                const k1 = this.getDerivatives(state, g, damping);
+
+                // k2
+                const stateK2 = [
+                    state[0] + 0.5 * dt * k1[0],
+                    state[1] + 0.5 * dt * k1[1],
+                    state[2] + 0.5 * dt * k1[2],
+                    state[3] + 0.5 * dt * k1[3]
+                ];
+                const k2 = this.getDerivatives(stateK2, g, damping);
+
+                // k3
+                const stateK3 = [
+                    state[0] + 0.5 * dt * k2[0],
+                    state[1] + 0.5 * dt * k2[1],
+                    state[2] + 0.5 * dt * k2[2],
+                    state[3] + 0.5 * dt * k2[3]
+                ];
+                const k3 = this.getDerivatives(stateK3, g, damping);
+
+                // k4
+                const stateK4 = [
+                    state[0] + dt * k3[0],
+                    state[1] + dt * k3[1],
+                    state[2] + dt * k3[2],
+                    state[3] + dt * k3[3]
+                ];
+                const k4 = this.getDerivatives(stateK4, g, damping);
+
+                // Final Update
+                this.a1 += (dt / 6) * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]);
+                this.v1 += (dt / 6) * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
+                this.a2 += (dt / 6) * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2]);
+                this.v2 += (dt / 6) * (k1[3] + 2 * k2[3] + 2 * k3[3] + k4[3]);
+            }
+
+            getPositions(ox, oy) {
+                const x1 = ox + this.r1 * Math.sin(this.a1);
+                const y1 = oy + this.r1 * Math.cos(this.a1);
+                const x2 = x1 + this.r2 * Math.sin(this.a2);
+                const y2 = y1 + this.r2 * Math.cos(this.a2);
+                return { x1, y1, x2, y2 };
+            }
+
+            // Energy Calculation
+            getEnergy(g) {
+                // Potential Energy V = -mgy (coordinate system y down is positive, so -y is up)
+                // Let's stick to standard PE = m g h. 
+                // Zero PE at pivot? 
+                // y1 = r1 cos a1. y2 = y1 + r2 cos a2. (y measured down from pivot)
+                // PE = -m1 g y1 - m2 g y2
+
+                const y1 = this.r1 * Math.cos(this.a1);
+                const y2 = y1 + this.r2 * Math.cos(this.a2);
+
+                const PE = -(this.m1 * g * y1 + this.m2 * g * y2);
+
+                // Kinetic Energy T = 0.5 m v^2
+                // v1^2 = (r1 omega1)^2
+                const v1sq = (this.r1 * this.v1) ** 2;
+
+                // v2 is trickier. Velocity of mass 2 vector sum.
+                // v2^2 = r1^2 w1^2 + r2^2 w2^2 + 2 r1 r2 w1 w2 cos(a1-a2)
+                const v2sq = (this.r1 * this.v1) ** 2 + (this.r2 * this.v2) ** 2 + 2 * this.r1 * this.r2 * this.v1 * this.v2 * Math.cos(this.a1 - this.a2);
+
+                const KE = 0.5 * this.m1 * v1sq + 0.5 * this.m2 * v2sq;
+
+                return { T: KE, V: PE, E: KE + PE };
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // APP CONTROLLER
+        // ------------------------------------------------------------------
+        const mainCanvas = document.getElementById('main-canvas');
+        const trailCanvas = document.getElementById('trail-canvas');
+        const mCtx = mainCanvas.getContext('2d');
+        const tCtx = trailCanvas.getContext('2d');
+        const gCan = document.getElementById('energy-graph');
+        const gCtx = gCan.getContext('2d');
+
+        // Config
+        let width, height, cx, cy;
+        let running = true;
+        let dragging = null; // 'm1' or 'm2'
+
+        let GRAVITY = 15; // Scaled for visual speed
+        let DAMPING = 0.0;
+        let MASS_RATIO = 1.0;
+        let TRAIL_FADE = 0.1;
+        let SIM_SPEED = 2.0;
+
+        // System
+        const pendulums = []; // Supports multiple for shadow mode
+
+        // Energy History
+        const energyBuffer = new Array(200).fill(0);
+
+        // Initialization
+        function init() {
+            resize();
+            resetSystem();
+
+            // Listeners
+            window.addEventListener('resize', resize);
+            setupInput();
+
+            requestAnimationFrame(loop);
+        }
+
+        function resetSystem() {
+            pendulums.length = 0;
+            const r = Math.min(width, height) * 0.15;
+            // Create Main Pendulum
+            pendulums.push(new DoublePendulum(r, r, 10, 10 * MASS_RATIO, PI / 2, PI / 2 + 1, '#00f3ff'));
+
+            // Clear trails
+            tCtx.fillStyle = '#000';
+            tCtx.fillRect(0, 0, width, height);
+        }
+
+        function spawnShadow() {
+            if (pendulums.length === 0) return;
+            const p = pendulums[0];
+
+            // Create Ghost with tiny offset
+            const ghost = new DoublePendulum(
+                p.r1, p.r2, p.m1, p.m2,
+                p.a1 + 0.001, // 1 milliradian offset
+                p.a2,
+                '#ffee00' // Yellow ghost
+            );
+            ghost.v1 = p.v1;
+            ghost.v2 = p.v2;
+
+            pendulums.push(ghost);
+        }
+
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+
+            mainCanvas.width = width;
+            mainCanvas.height = height;
+            trailCanvas.width = width;
+            trailCanvas.height = height;
+
+            cx = width / 2;
+            cy = height / 3;
+
+            // Clear trails on resize
+            tCtx.fillStyle = '#000';
+            tCtx.fillRect(0, 0, width, height);
+        }
+
+        // ------------------------------------------------------------------
+        // INPUT HANDLING
+        // ------------------------------------------------------------------
+        function setupInput() {
+            // Drag Logic
+            mainCanvas.addEventListener('mousedown', e => {
+                const rect = mainCanvas.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+
+                if (pendulums.length > 0) {
+                    const p = pendulums[0];
+                    const pos = p.getPositions(cx, cy);
+
+                    // Check Hit M1
+                    if (Math.hypot(mx - pos.x1, my - pos.y1) < 30) {
+                        dragging = 'm1';
+                        running = false;
+                        pendulums.forEach(pen => pen.v1 = pen.v2 = 0); // Stop all
+                    }
+                    // Check Hit M2
+                    else if (Math.hypot(mx - pos.x2, my - pos.y2) < 30) {
+                        dragging = 'm2';
+                        running = false;
+                        pendulums.forEach(pen => pen.v1 = pen.v2 = 0);
+                    }
+                }
+            });
+
+            window.addEventListener('mousemove', e => {
+                if (!dragging) return;
+                const rect = mainCanvas.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+
+                const dx = mx - cx;
+                const dy = my - cy;
+
+                const angle = Math.atan2(dx, dy); // 0 is down usually? Math.atan2(y,x). 
+                // Our physics: 0 is straight down (y positive). 
+                // dx, dy coordinates: y is down.
+                // Atan2(x, y) gives angle from vertical Y axis?
+                // atan2(y, x) -> angle from X axis.
+
+                // Let's use standard atan2(dx, dy) which gives 0 at +Y (down)? No.
+                // Standard trig: 0 is Right. 
+                // Let's map positions correctly.
+
+                if (pendulums.length > 0) {
+                    const p = pendulums[0];
+                    if (dragging === 'm1') {
+                        p.a1 = Math.atan2(dx, dy);
+                        // Keep m2 relative angle same or drag? Let's just drag m1.
+                        // Ghost follows
+                        for (let i = 1; i < pendulums.length; i++) pendulums[i].a1 = p.a1;
+                    }
+                    else if (dragging === 'm2') {
+                        // Calculate pos of m1 first
+                        const x1 = cx + p.r1 * Math.sin(p.a1);
+                        const y1 = cy + p.r1 * Math.cos(p.a1);
+                        p.a2 = Math.atan2(mx - x1, my - y1);
+                        for (let i = 1; i < pendulums.length; i++) pendulums[i].a2 = p.a2;
+                    }
+                }
+            });
+
+            window.addEventListener('mouseup', () => {
+                dragging = null;
+                running = true;
+                // Reset velocities on release? Yes, drop from static.
+                pendulums.forEach(pen => { pen.v1 = 0; pen.v2 = 0; });
+            });
+
+            // Controls
+            document.getElementById('btn-reset').onclick = resetSystem;
+            document.getElementById('btn-butterfly').onclick = spawnShadow;
+
+            // Sliders
+            document.getElementById('sli-g').oninput = e => {
+                document.getElementById('val-g').innerText = e.target.value;
+                GRAVITY = parseFloat(e.target.value) * 15; // 15 is base scale
+            };
+            document.getElementById('sli-d').oninput = e => {
+                document.getElementById('val-d').innerText = e.target.value;
+                DAMPING = parseFloat(e.target.value);
+            };
+            document.getElementById('sli-m').oninput = e => {
+                const val = parseFloat(e.target.value);
+                document.getElementById('val-m').innerText = val;
+                MASS_RATIO = val;
+                pendulums.forEach(p => p.m2 = p.m1 * val);
+            };
+            document.getElementById('sli-trail').oninput = e => {
+                TRAIL_FADE = parseFloat(e.target.value);
+            };
+        }
+
+        // ------------------------------------------------------------------
+        // RENDERING & LOOP
+        // ------------------------------------------------------------------
+
+        function loop() {
+            // Physics Step
+            const dt = 0.016 * SIM_SPEED;
+            if (running && !dragging) {
+                // Sub-stepping for stability
+                for (let i = 0; i < 4; i++) {
+                    pendulums.forEach(p => p.update(dt / 4, GRAVITY, DAMPING));
+                }
+            }
+
+            // Draw Trails (Fade Effect)
+            // 'Desaturate' the trail canvas by drawing a low opacity black rect
+            tCtx.fillStyle = `rgba(0, 0, 0, ${TRAIL_FADE})`;
+            tCtx.fillRect(0, 0, width, height);
+
+            // Draw New Trail Segments
+            pendulums.forEach(p => {
+                const pos = p.getPositions(cx, cy);
+
+                // We need previous position to draw line?
+                // Just drawing a dot is enough if sub-steps are high, but line is better.
+                // For simplicity in this loop, we draw a 'glow' at current pos.
+
+                tCtx.beginPath();
+                tCtx.arc(pos.x2, pos.y2, 2, 0, PI * 2);
+                tCtx.fillStyle = p.color; // Use the pendulum's color property
+                tCtx.fill();
+
+                // Add sheen
+                tCtx.shadowBlur = 10;
+                tCtx.shadowColor = p.color;
+                tCtx.fill();
+                tCtx.shadowBlur = 0;
+            });
+
+            // Main Render
+            mCtx.clearRect(0, 0, width, height);
+
+            // Draw Axis/Pivot
+            mCtx.fillStyle = '#fff';
+            mCtx.beginPath(); mCtx.arc(cx, cy, 5, 0, PI * 2); mCtx.fill();
+
+            // Draw Pendulums
+            pendulums.forEach((p, idx) => {
+                const pos = p.getPositions(cx, cy);
+                const isShadow = idx > 0;
+
+                const alpha = isShadow ? 0.6 : 1.0;
+
+                mCtx.strokeStyle = isShadow ? p.color : '#fff';
+                mCtx.lineWidth = isShadow ? 1 : 2;
+                mCtx.globalAlpha = alpha;
+
+                // Rods
+                mCtx.beginPath();
+                mCtx.moveTo(cx, cy);
+                mCtx.lineTo(pos.x1, pos.y1);
+                mCtx.lineTo(pos.x2, pos.y2);
+                mCtx.stroke();
+
+                // Mass 1
+                mCtx.fillStyle = isShadow ? p.color : '#00f3ff';
+                mCtx.beginPath(); mCtx.arc(pos.x1, pos.y1, isShadow ? 8 : 10, 0, PI * 2); mCtx.fill();
+
+                // Mass 2
+                mCtx.fillStyle = p.color; // M2 carries the color ID
+                mCtx.beginPath();
+                mCtx.arc(pos.x2, pos.y2, isShadow ? 8 : 12, 0, PI * 2);
+                mCtx.fill();
+
+                // Glow
+                mCtx.shadowBlur = 20;
+                mCtx.shadowColor = p.color;
+                mCtx.stroke();
+                mCtx.shadowBlur = 0;
+
+                mCtx.globalAlpha = 1.0;
+            });
+
+            // Update Energy Graph
+            if (pendulums.length > 0) {
+                updateGraph(pendulums[0]);
+            }
+
+            requestAnimationFrame(loop);
+        }
+
+        function updateGraph(p) {
+            const e = p.getEnergy(GRAVITY);
+            // Push to buffer
+            energyBuffer.push(e);
+            if (energyBuffer.length > 280) energyBuffer.shift();
+
+            // Draw Graph
+            gCtx.clearRect(0, 0, 280, 130);
+
+            // Auto-scale vertical ranges? 
+            // Normalized View.
+            // Find max/min in buffer?
+            // Just center around initial Energy (E should be constant)
+
+            const baseE = energyBuffer[0].E;
+
+            // Draw Total Energy (White) - Should be flat
+            gCtx.strokeStyle = '#fff';
+            gCtx.beginPath();
+            energyBuffer.forEach((pt, i) => {
+                const y = 65 - (pt.E - baseE) * 0.1; // Scale factor
+                if (i === 0) gCtx.moveTo(i, y); else gCtx.lineTo(i, y);
+            });
+            gCtx.stroke();
+
+            // Draw PE (Green)
+            gCtx.strokeStyle = '#00ff00';
+            gCtx.beginPath();
+            energyBuffer.forEach((pt, i) => {
+                // Map PE to screen. Arbitrary scale for visibility
+                const y = 65 - (pt.V / 200);
+                if (i === 0) gCtx.moveTo(i, y); else gCtx.lineTo(i, y);
+            });
+            gCtx.stroke();
+
+            // Draw KE (Yellow)
+            gCtx.strokeStyle = '#ffff00';
+            gCtx.beginPath();
+            energyBuffer.forEach((pt, i) => {
+                const y = 65 - (pt.T / 200);
+                if (i === 0) gCtx.moveTo(i, y); else gCtx.lineTo(i, y);
+            });
+            gCtx.stroke();
+
+            // Legend
+            gCtx.font = '10px JetBrains Mono';
+            gCtx.fillStyle = '#fff'; gCtx.fillText('E (Total)', 5, 10);
+            gCtx.fillStyle = '#00ff00'; gCtx.fillText('V (Potential)', 5, 22);
+            gCtx.fillStyle = '#ffff00'; gCtx.fillText('T (Kinetic)', 5, 34);
+        }
+
+        // Boot
+        init();
+
+    </script>
+</body>
+
+</html>

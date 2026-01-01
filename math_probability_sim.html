@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skila.ai | Probability Lab</title>
+    <!-- FONTS -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0F172A;
+            /* Void Blue */
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+            color: white;
+        }
+
+        #sim-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* UI LAYER */
+        .ui-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        /* STATS HUD */
+        .stats-hud {
+            position: absolute;
+            top: 40px;
+            left: 40px;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-left: 4px solid #F59E0B;
+            border-radius: 12px;
+            padding: 20px;
+            pointer-events: auto;
+            width: 240px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        .stat-label {
+            color: #94A3B8;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 10px;
+        }
+
+        .stat-val {
+            font-family: 'JetBrains Mono';
+            font-weight: 700;
+            color: white;
+        }
+
+        /* CONTROLS */
+        .controls {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 16px 32px;
+            display: flex;
+            align-items: center;
+            gap: 32px;
+            pointer-events: auto;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .ctrl-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .ctrl-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: #64748B;
+            font-weight: 700;
+        }
+
+        input[type=range] {
+            width: 150px;
+            accent-color: #3B82F6;
+        }
+
+        .btn-speed {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: #1E293B;
+            color: #E2E8F0;
+            border: 1px solid #334155;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-speed:hover {
+            background: #334155;
+            transform: scale(1.1);
+            color: #F59E0B;
+            border-color: #F59E0B;
+        }
+
+        .btn-speed.active {
+            background: #F59E0B;
+            color: black;
+            border-color: #F59E0B;
+            box-shadow: 0 0 20px #F59E0B;
+        }
+
+        /* OVERLAY GRAPH */
+        .graph-legend {
+            position: absolute;
+            top: 40px;
+            right: 40px;
+            text-align: right;
+            pointer-events: none;
+        }
+
+        .legend-item {
+            font-size: 12px;
+            color: #94A3B8;
+            margin-bottom: 4px;
+        }
+
+        .dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-left: 8px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="sim-canvas"></canvas>
+
+    <div class="ui-layer">
+
+        <!-- Stats -->
+        <div class="stats-hud">
+            <div class="text-xs text-amber-500 font-bold mb-4 uppercase tracking-widest">Galton Statistics</div>
+            <div class="stat-row">
+                <span class="stat-label">Total (N)</span>
+                <span class="stat-val" id="n-val">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Mean (μ)</span>
+                <span class="stat-val" id="mean-val">0.0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Std Dev (σ)</span>
+                <span class="stat-val" id="std-val">0.0</span>
+            </div>
+        </div>
+
+        <div class="graph-legend">
+            <div class="legend-item">Theoretical Curve <span class="dot bg-amber-500"></span></div>
+            <div class="legend-item">Observed Data <span class="dot bg-blue-500/50"></span></div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls">
+            <div class="ctrl-group">
+                <label class="ctrl-label">Probability Bias (Tilt)</label>
+                <input type="range" min="0" max="100" value="50" oninput="setBias(this.value)">
+                <div class="flex justify-between w-full text-[9px] text-slate-500 font-bold uppercase">
+                    <span>Left</span><span>Center</span><span>Right</span>
+                </div>
+            </div>
+
+            <div class="w-px h-10 bg-slate-700"></div>
+
+            <button class="btn-speed" id="btn-warp" onclick="toggleWarp()" title="Time Warp">
+                <i class="fas fa-bolt"></i>
+            </button>
+        </div>
+    </div>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        /**
+         * SKILA.ai - Galton Board Simulator
+         * - Physics Engine (Gravity, Peg Collisions)
+         * - Statistical Accumulator (Bins)
+         * - Random Walk Logic
+         */
+
+        const canvas = document.getElementById('sim-canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height, cx, cy;
+        let time = 0;
+
+        // --- STATE ---
+        const SIM = {
+            bias: 0.5, // 0.0 (Left) to 1.0 (Right)
+            warp: false,
+            columns: 21, // Bins
+            pegs: [],
+            balls: [],
+            bins: [],
+            totalBalls: 0,
+            sumX: 0,
+            sumSqX: 0
+        };
+        // Bin setup
+        for (let i = 0; i < SIM.columns; i++) SIM.bins[i] = 0;
+
+        // --- CONFIG ---
+        const PEG_ROWS = 12;
+        const PEG_GAP = 40;
+        const BALL_R = 4;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            cx = width / 2; cy = height * 0.4;
+            initBoard();
+        }
+
+        // --- GEOMETRY ---
+        function initBoard() {
+            SIM.pegs = [];
+            // Triangle layout
+            for (let r = 0; r < PEG_ROWS; r++) {
+                for (let c = 0; c <= r; c++) {
+                    const x = cx + (c - r / 2) * PEG_GAP;
+                    const y = 100 + r * PEG_GAP * 0.866; // Hex height
+                    SIM.pegs.push({ x, y, r: 3 });
+                }
+            }
+        }
+
+        // --- CLASSES ---
+        class Ball {
+            constructor() {
+                this.x = cx + (Math.random() - 0.5) * 2; // Jitter start
+                this.y = 60;
+                this.vx = 0;
+                this.vy = 0;
+                this.r = BALL_R;
+                this.active = true;
+                this.col = `hsl(${Math.random() * 40 + 200}, 90%, 60%)`; // Blueish
+
+                // For simplified warp mode: calculated landing
+            }
+
+            update() {
+                if (!this.active) return;
+
+                // Physics
+                this.vy += 0.25; // Gravity
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Collision with Pegs
+                for (let p of SIM.pegs) {
+                    const dx = this.x - p.x;
+                    const dy = this.y - p.y;
+                    const distSq = dx * dx + dy * dy;
+                    if (distSq < (this.r + p.r + 2) ** 2) {
+                        // HIT PEG
+                        // Bounce Logic:
+                        // Bias determines Left/Right probability
+                        // Bias 0.5 = 50/50
+
+                        const dir = Math.random() < SIM.bias ? 1 : -1;
+
+                        // Push out
+                        this.vy *= -0.4; // Damping
+                        this.vx = dir * (1.5 + Math.random()); // Kick sideways
+                        this.y = p.y - (this.r + p.r); // Snap top
+                    }
+                }
+
+                // Hit Bottom (Bins)
+                const boardBottom = 100 + PEG_ROWS * PEG_GAP * 0.866 + 20;
+                if (this.y > boardBottom) {
+                    this.freeze();
+                }
+            }
+
+            freeze() {
+                this.active = false;
+                SIM.totalBalls++;
+
+                // Determine Bin Index
+                // Board width at bottom approx PEG_ROWS * PEG_GAP
+                // Map x to bin index 0..SIM.columns-1
+                const maxW = PEG_ROWS * PEG_GAP;
+                const relX = this.x - (cx - maxW / 2);
+                let idx = Math.floor(relX / (maxW / SIM.columns));
+
+                // Clamp
+                if (idx < 0) idx = 0;
+                if (idx >= SIM.columns) idx = SIM.columns - 1;
+
+                SIM.bins[idx]++;
+
+                // Stats Update
+                const val = idx; // 0 to 20
+                SIM.sumX += val;
+                SIM.sumSqX += val * val;
+            }
+
+            draw(ctx) {
+                if (!this.active) return;
+                ctx.fillStyle = this.col;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // FAST MODE SIM
+        function dropFast() {
+            // Instantly simulate N random walks
+            for (let k = 0; k < 10; k++) {
+                SIM.totalBalls++;
+                let pos = 0; // Center
+                // Simulate PEG_ROWS decisions
+                for (let r = 0; r < PEG_ROWS; r++) {
+                    if (Math.random() < SIM.bias) pos += 0.5; // Right
+                    else pos -= 0.5; // Left
+                }
+
+                // Map pos range (-6 to +6) to bins (0 to 20)
+                // Center is bin 10
+                // Scaling: +/- 6 covers the width? 
+
+                // Let's approximate
+                let bin = Math.round(10 + pos * (SIM.columns / PEG_ROWS * 1.5));
+                if (bin < 0) bin = 0;
+                if (bin >= SIM.columns) bin = SIM.columns - 1;
+
+                SIM.bins[bin]++;
+                SIM.sumX += bin;
+                SIM.sumSqX += bin * bin;
+            }
+        }
+
+        // --- RENDER ---
+        function drawBoard() {
+            // Pegs
+            ctx.fillStyle = 'rgba(255,255,255,0.8)';
+            ctx.shadowColor = 'white'; ctx.shadowBlur = 4;
+            SIM.pegs.forEach(p => {
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+            });
+            ctx.shadowBlur = 0;
+
+            // Bins (Visual)
+            // Bottom area
+            const boardBottom = 100 + PEG_ROWS * PEG_GAP * 0.866 + 20;
+            const binW = (PEG_ROWS * PEG_GAP) / SIM.columns;
+            const startX = cx - (PEG_ROWS * PEG_GAP) / 2;
+
+            for (let i = 0; i < SIM.columns; i++) {
+                const bx = startX + i * binW;
+                const count = SIM.bins[i];
+
+                // Draw Bar
+                const h = Math.min(300, count * 2); // Scale height
+
+                // Color gradient based on deviation from center (red tails, blue center)
+                const dist = Math.abs(i - SIM.columns / 2);
+                const hue = 220 - dist * 10;
+                ctx.fillStyle = `hsla(${hue}, 80%, 60%, 0.6)`;
+
+                ctx.fillRect(bx, height - 100 - h, binW - 2, h);
+
+                // Slot lines
+                ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+                ctx.beginPath(); ctx.moveTo(bx, boardBottom); ctx.lineTo(bx, height - 100); ctx.stroke();
+            }
+
+            // THEORETICAL BELL CURVE
+            // Normal Dist: N(mu, sigma)
+            // Center depends on Bias. 
+            // If Bias 0.5 -> Mean = Columns/2 = 10.5
+            // If Bias 0.8 -> Mean shifts Right
+
+            if (SIM.totalBalls > 10) {
+                const theoreticalMean = SIM.columns * SIM.bias;
+                // Binomial Variance: np(1-p) for n rows?
+                // Approx Sigma around 2-3 bins width
+                const theoreticalSigma = Math.sqrt(SIM.columns * SIM.bias * (1 - SIM.bias));
+
+                ctx.beginPath();
+                ctx.strokeStyle = '#F59E0B';
+                ctx.lineWidth = 3;
+
+                const peakH = 200; // Visual scale matches bars approx
+
+                for (let x = 0; x < width; x += 5) {
+                    // Map x to bin index space
+                    const binIdx = (x - startX) / binW;
+
+                    // Gaussian Function
+                    const exponent = -0.5 * Math.pow((binIdx - theoreticalMean) / theoreticalSigma, 2);
+                    const yVal = peakH * Math.exp(exponent);
+
+                    if (x === 0) ctx.moveTo(x, height - 100 - yVal);
+                    else ctx.lineTo(x, height - 100 - yVal);
+                }
+                ctx.stroke();
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('n-val').innerText = SIM.totalBalls;
+
+            if (SIM.totalBalls > 0) {
+                const mean = SIM.sumX / SIM.totalBalls;
+                const variance = (SIM.sumSqX / SIM.totalBalls) - (mean * mean);
+                const std = Math.sqrt(variance);
+
+                document.getElementById('mean-val').innerText = mean.toFixed(2);
+                document.getElementById('std-val').innerText = std.toFixed(2);
+            }
+        }
+
+        // --- LOOP ---
+        function loop() {
+            // Spawn Rate
+            if (SIM.warp) {
+                dropFast(); // No visual balls, just data
+            } else {
+                if (time % 2 === 0) SIM.balls.push(new Ball());
+            }
+
+            // Updates
+            for (let i = SIM.balls.length - 1; i >= 0; i--) {
+                const b = SIM.balls[i];
+                b.update();
+                if (!b.active) SIM.balls.splice(i, 1);
+            }
+
+            // Draw
+            ctx.fillStyle = '#0F172A';
+            ctx.fillRect(0, 0, width, height);
+
+            // Rotate visual for bias tilt
+            ctx.save();
+            // Pivot at top center
+            ctx.translate(cx, 100);
+            const tiltAngle = (SIM.bias - 0.5) * 0.5; // -0.25 to 0.25 rad
+            ctx.rotate(tiltAngle);
+            ctx.translate(-cx, -100);
+
+            drawBoard();
+
+            // Draw Balls
+            SIM.balls.forEach(b => b.draw(ctx));
+
+            ctx.restore();
+
+            updateStats();
+
+            time++;
+            requestAnimationFrame(loop);
+        }
+
+        // --- INTERACTION ---
+        window.addEventListener('resize', resize);
+        window.setBias = (v) => {
+            SIM.bias = parseInt(v) / 100;
+            // Reset bins? Maybe better to keep history to show shift?
+            // Let's clear to show new distribution clearly
+            SIM.bins.fill(0);
+            SIM.totalBalls = 0; SIM.sumX = 0; SIM.sumSqX = 0;
+        };
+        window.toggleWarp = () => {
+            SIM.warp = !SIM.warp;
+            document.getElementById('btn-warp').classList.toggle('active');
+            if (SIM.warp) SIM.balls = []; // Clear visual particles for perf
+        };
+
+        // Init
+        resize();
+        loop();
+
+    </script>
+</body>
+
+</html>

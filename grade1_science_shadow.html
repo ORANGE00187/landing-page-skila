@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Light & Shadow</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #E0F2FE;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 16px;
+            border-radius: 12px;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            max-width: 300px;
+        }
+
+        button {
+            background: #0EA5E9;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 10px;
+            transition: transform 0.1s;
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        .mode-toggle {
+            margin-top: 10px;
+            display: flex;
+            gap: 8px;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+    <div class="ui">
+        <h1 class="text-2xl font-bold text-slate-800">Light & Shadow</h1>
+        <p class="text-sm text-slate-500 mb-2">Drag the Sun to move the shadow!</p>
+        <div class="mode-toggle">
+            <button onclick="setObject('bear')">Bear 🐻</button>
+            <button onclick="setObject('cube')">Cube 🧊</button>
+            <button onclick="setObject('pyramid')">Pyramid 🔺</button>
+        </div>
+        <button onclick="toggleNight()" class="bg-indigo-600 w-full mt-4">Toggle Night Mode 🌙</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let width, height;
+
+        // State
+        let SUN = { x: 100, y: 100, r: 40, dragging: false };
+        let OBJECT = 'bear'; // bear, cube, pyramid
+        let IS_NIGHT = false;
+        let MOUSE = { x: 0, y: 0 };
+
+        // Colors
+        const SKY_DAY = { top: '#E0F2FE', bottom: '#F0F9FF' };
+        const SKY_SUNSET = { top: '#FEF3C7', bottom: '#FFEDD5' };
+        const SKY_NIGHT = { top: '#0F172A', bottom: '#1E293B' };
+
+        // Bear Geometry (Simple Circles)
+        const BEAR_PARTS = [
+            { x: 0, y: 0, r: 60 }, // Head
+            { x: -50, y: -50, r: 25 }, // Ear L
+            { x: 50, y: -50, r: 25 }, // Ear R
+            { x: -20, y: 10, r: 8, color: '#000' }, // Eye
+            { x: 20, y: 10, r: 8, color: '#000' }, // Eye
+            { x: 0, y: 30, r: 20 }, // Snout
+            { x: 0, y: 25, r: 10, color: '#000' } // Nose
+        ];
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            if (!SUN.dragging) {
+                SUN.x = width * 0.2;
+                SUN.y = height * 0.2;
+            }
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Mouse Drag
+        canvas.addEventListener('mousedown', e => {
+            const dx = e.clientX - SUN.x;
+            const dy = e.clientY - SUN.y;
+            if (Math.sqrt(dx * dx + dy * dy) < SUN.r + 20) SUN.dragging = true;
+        });
+        window.addEventListener('mouseup', () => SUN.dragging = false);
+        window.addEventListener('mousemove', e => {
+            MOUSE.x = e.clientX; MOUSE.y = e.clientY;
+            if (SUN.dragging && !IS_NIGHT) {
+                SUN.x = e.clientX;
+                SUN.y = Math.min(e.clientY, height - 150); // Keep above ground
+            }
+        });
+
+        window.setObject = (type) => OBJECT = type;
+        window.toggleNight = () => IS_NIGHT = !IS_NIGHT;
+
+        function loop() {
+            // Update Night Mode Flashlight
+            let lightX = IS_NIGHT ? MOUSE.x : SUN.x;
+            let lightY = IS_NIGHT ? MOUSE.y : SUN.y;
+
+            // Sky
+            let grad = ctx.createLinearGradient(0, 0, 0, height);
+            if (IS_NIGHT) {
+                grad.addColorStop(0, SKY_NIGHT.top); grad.addColorStop(1, SKY_NIGHT.bottom);
+            } else {
+                // Sunset mix
+                const sunH = lightY / height;
+                if (sunH > 0.4) {
+                    grad.addColorStop(0, '#FDBA74'); grad.addColorStop(1, '#FF7E3B'); // Sunset
+                } else {
+                    grad.addColorStop(0, SKY_DAY.top); grad.addColorStop(1, SKY_DAY.bottom);
+                }
+            }
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, width, height);
+
+            // Ground
+            ctx.fillStyle = IS_NIGHT ? '#1E293B' : '#E2E8F0';
+            ctx.fillRect(0, height - 100, width, 100);
+
+            // Sun / Moon / Flashlight
+            if (!IS_NIGHT) {
+                ctx.shadowColor = '#F59E0B'; ctx.shadowBlur = 50;
+                ctx.fillStyle = '#F59E0B';
+                ctx.beginPath(); ctx.arc(SUN.x, SUN.y, SUN.r, 0, Math.PI * 2); ctx.fill();
+                ctx.shadowBlur = 0;
+            } else {
+                // Flashlight beam
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(lightX, lightY);
+                ctx.lineTo(width / 2 - 100, height - 100);
+                ctx.lineTo(width / 2 + 100, height - 100);
+                ctx.fillStyle = 'rgba(255,255,200,0.1)';
+                ctx.fill();
+                ctx.restore();
+            }
+
+            const cx = width / 2;
+            const cy = height - 120;
+
+            // --- SHADOW CALCULATION ---
+            // Simple projection: (objX - lightX) * scale
+            // As light gets lower (y increases), shadow stretches (scale increases)
+            const lightH = (height - 100) - lightY;
+            const scaleY = Math.max(0.2, 200 / (lightH + 1));
+            const skewX = (cx - lightX) * 0.005; // simplified
+
+            // Draw Shadow
+            ctx.save();
+            ctx.translate(cx, height - 100);
+            ctx.transform(1, 0, -skewX, scaleY * 0.5, 0, 0); // Shear
+            ctx.translate(-cx, -(height - 100)); // untranslate
+
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.filter = 'blur(8px)';
+
+            if (OBJECT === 'bear') {
+                BEAR_PARTS.forEach(p => {
+                    if (!p.color) { // Only body
+                        ctx.beginPath(); ctx.arc(cx + p.x, height - 100 + p.y - 60, p.r, 0, Math.PI * 2); ctx.fill();
+                    }
+                });
+            } else if (OBJECT === 'cube') {
+                ctx.fillRect(cx - 50, height - 160, 100, 100);
+            } else if (OBJECT === 'pyramid') {
+                ctx.beginPath(); ctx.moveTo(cx, height - 200); ctx.lineTo(cx - 60, height - 100); ctx.lineTo(cx + 60, height - 100); ctx.fill();
+            }
+
+            ctx.filter = 'none';
+            ctx.restore();
+
+            // --- DRAW OBJECT ---
+            if (OBJECT === 'bear') {
+                // Teddy Bear (Glassy)
+                BEAR_PARTS.forEach(p => {
+                    ctx.save();
+                    ctx.translate(cx + p.x, cy + p.y);
+
+                    // Glass Fill
+                    let rGrad = ctx.createRadialGradient(-10, -10, p.r * 0.2, 0, 0, p.r);
+                    rGrad.addColorStop(0, 'rgba(255,255,255,0.8)');
+                    rGrad.addColorStop(1, p.color || 'rgba(200,230,255,0.4)');
+                    ctx.fillStyle = rGrad;
+
+                    if (p.color) ctx.fillStyle = p.color; // Eyes/Nose solid
+
+                    ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI * 2); ctx.fill();
+
+                    // Shine
+                    if (!p.color) {
+                        ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+                        ctx.lineWidth = 2; ctx.stroke();
+                    }
+                    ctx.restore();
+                });
+            } else if (OBJECT === 'cube') {
+                ctx.fillStyle = 'rgba(100, 200, 255, 0.5)';
+                ctx.strokeStyle = 'white'; ctx.lineWidth = 4;
+                ctx.fillRect(cx - 50, cy - 50, 100, 100);
+                ctx.strokeRect(cx - 50, cy - 50, 100, 100);
+            } else if (OBJECT === 'pyramid') {
+                ctx.fillStyle = 'rgba(255, 100, 100, 0.5)';
+                ctx.strokeStyle = 'white'; ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(cx, cy - 80);
+                ctx.lineTo(cx - 60, cy + 50);
+                ctx.lineTo(cx + 60, cy + 50);
+                ctx.closePath();
+                ctx.fill(); ctx.stroke();
+            }
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+    </script>
+</body>
+
+</html>

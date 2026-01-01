@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skila.ai | Enamel Micro-Lab</title>
+    <!-- FONTS -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0F172A;
+            /* Deep Medical Dark Blue */
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+        }
+
+        #sim-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 10;
+        }
+
+        /* MEDICAL HUD */
+        .hud-overlay {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 20;
+            background: radial-gradient(circle at center, transparent 30%, #0F172A 120%);
+        }
+
+        .panel-left {
+            position: absolute;
+            top: 50%;
+            left: 2rem;
+            transform: translateY(-50%);
+            width: 300px;
+            pointer-events: auto;
+        }
+
+        .glass-card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 24px;
+            color: white;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .metric-title {
+            font-size: 10px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: #94A3B8;
+            margin-bottom: 4px;
+        }
+
+        .metric-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 24px;
+            font-weight: 700;
+            color: white;
+            text-shadow: 0 0 20px rgba(45, 212, 191, 0.5);
+        }
+
+        .scan-line {
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #2DD4BF, transparent);
+            opacity: 0.5;
+            margin: 20px 0;
+            animation: scan 3s infinite linear;
+        }
+
+        @keyframes scan {
+            0% {
+                opacity: 0;
+                transform: translateX(-50%);
+            }
+
+            50% {
+                opacity: 1;
+            }
+
+            100% {
+                opacity: 0;
+                transform: translateX(50%);
+            }
+        }
+
+        /* LABELS */
+        .label-marker {
+            position: absolute;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            pointer-events: auto;
+            cursor: help;
+        }
+
+        .marker-dot {
+            width: 8px;
+            height: 8px;
+            background: #2DD4BF;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #2DD4BF;
+            position: relative;
+        }
+
+        .marker-dot::after {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            border: 1px solid #2DD4BF;
+            border-radius: 50%;
+            opacity: 0.5;
+            animation: pulse 2s infinite;
+        }
+
+        .marker-text {
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(45, 212, 191, 0.3);
+            color: #E2E8F0;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            backdrop-filter: blur(4px);
+            transform: translateX(-10px);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .label-marker:hover .marker-text {
+            transform: translateX(0);
+            opacity: 1;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                opacity: 0.5;
+            }
+
+            100% {
+                transform: scale(2);
+                opacity: 0;
+            }
+        }
+
+        /* CONTROLS */
+        .control-bar {
+            position: absolute;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 16px;
+            z-index: 30;
+            pointer-events: auto;
+        }
+
+        .tool-btn {
+            background: #1E293B;
+            border: 1px solid #334155;
+            color: #94A3B8;
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tool-btn:hover {
+            background: #334155;
+            color: white;
+            border-color: #475569;
+        }
+
+        .tool-btn.active {
+            background: #2DD4BF;
+            color: #0f172a;
+            border-color: #2DD4BF;
+            box-shadow: 0 0 20px rgba(45, 212, 191, 0.4);
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="sim-canvas"></canvas>
+
+    <div class="hud-overlay">
+        <!-- Live Metrics Panel -->
+        <div class="panel-left">
+            <div class="glass-card">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="w-8 h-8 rounded-lg bg-teal-500/20 flex items-center justify-center text-teal-400">
+                        <i class="fas fa-dna"></i>
+                    </div>
+                    <div>
+                        <div class="text-xs text-slate-400 font-bold uppercase tracking-wider">Bio-Scanner</div>
+                        <div class="text-white text-sm font-semibold">Enamel Integrity</div>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <div class="flex justify-between items-end mb-1">
+                        <span class="metric-title">Surface Health</span>
+                        <span class="metric-value text-teal-400" id="health-val">100%</span>
+                    </div>
+                    <div class="h-1 w-full bg-slate-700/50 rounded-full overflow-hidden">
+                        <div id="health-bar" class="h-full bg-teal-400 w-full shadow-[0_0_10px_currentColor]"></div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="p-3 rounded-lg bg-slate-800/50 border border-slate-700">
+                        <div class="metric-title">pH Level</div>
+                        <div class="text-lg font-mono text-white" id="ph-val">7.2</div>
+                    </div>
+                    <div class="p-3 rounded-lg bg-slate-800/50 border border-slate-700">
+                        <div class="metric-title">Mineral Sat</div>
+                        <div class="text-lg font-mono text-white">High</div>
+                    </div>
+                </div>
+
+                <div class="scan-line"></div>
+
+                <div class="text-[10px] text-slate-500 font-mono leading-relaxed" id="sys-log">
+                    > System Calibrated.<br>
+                    > Scanning Enamel Rods...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Interactive Labels (Injected by JS) -->
+    <div id="labels-container"></div>
+
+    <div class="control-bar">
+        <button class="tool-btn active">
+            <i class="fas fa-shield-virus"></i> Fluoride Shield
+        </button>
+        <button class="tool-btn" onmousedown="toggleXray(true)" onmouseup="toggleXray(false)"
+            onmouseleave="toggleXray(false)">
+            <i class="fas fa-x-ray"></i> X-Ray View
+        </button>
+    </div>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <script>
+        /**
+         * SKILA.ai - Advanced Dental Simulation
+         * - Procedural Bezier Geometry for realistic Molar
+         * - Vector-mapped Enamel Rods (Normal-aligned)
+         * - GPU-accelerated feel via Canvas
+         */
+
+        const canvas = document.getElementById('sim-canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+        let mouseX = 0, mouseY = 0;
+        let isXray = false;
+        let time = 0;
+
+        // --- STATE ---
+        const particles = [];
+        const enamelRods = []; // The "Health Grid" but mapped to curve
+
+        // --- TOOTH GEOMETRY (Bezier Control Points) ---
+        // A realistic molar profile defined by key points normalized (0-1)
+        // We will scale these to the canvas
+        const molarProfile = [
+            { x: 0.1, y: 0.5 }, // Left Root Start
+            { x: 0.2, y: 0.8 }, // Left Root Tip
+            { x: 0.45, y: 0.4 }, // Furcation (Crotch)
+            { x: 0.8, y: 0.8 }, // Right Root Tip
+            { x: 0.9, y: 0.5 }, // Right Root End
+            { x: 0.95, y: 0.3 }, // Crown Bulge Right
+            { x: 0.8, y: 0.1 }, // Cusp Right
+            { x: 0.5, y: 0.2 }, // Central Fossa (Dip)
+            { x: 0.2, y: 0.1 }, // Cusp Left
+            { x: 0.05, y: 0.3 } // Crown Bulge Left
+        ];
+
+        // --- INIT ---
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            generateEnamelRods();
+            updateLabelPositions();
+        }
+
+        function getToothScale() {
+            const scale = Math.min(width, height) * 0.8;
+            const cx = width / 2;
+            const cy = height * 0.4;
+            return { scale, cx, cy };
+        }
+
+        class EnamelRod {
+            constructor(x, y, angle, length, thickness) {
+                this.x = x;
+                this.y = y;
+                this.angle = angle;
+                this.baseLength = length;
+                this.thickness = thickness;
+                this.health = 1.0;
+                this.maxHealth = 1.0;
+            }
+
+            draw() {
+                if (isXray) return; // Hide enamael in xray for clarity
+
+                // Draw rod as a line getting shorter/transparent with health
+                const len = this.baseLength * (0.5 + 0.5 * this.health);
+                const ex = this.x + Math.cos(this.angle) * len;
+                const ey = this.y + Math.sin(this.angle) * len;
+
+                // Color gradients based on health
+                // Healthy: White/Cyan (#E0F2FE)
+                // Damaged: Dark Grey/Yellowish
+                // Critical: Gone
+
+                if (this.health < 0.1) return;
+
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y);
+                ctx.lineTo(ex, ey);
+
+                ctx.lineWidth = this.thickness;
+
+                let r, g, b, a;
+                if (this.health > 0.8) {
+                    // Healthy
+                    r = 224; g = 242; b = 254; a = 0.8;
+                } else {
+                    // Decayed
+                    r = 100; g = 100; b = 100; a = 0.5;
+                }
+
+                ctx.strokeStyle = `rgba(${r},${g},${b},${a})`;
+                ctx.stroke();
+
+                // Cap (Surface)
+                if (this.health > 0.9) {
+                    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+                    ctx.beginPath();
+                    ctx.arc(ex, ey, this.thickness / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+
+        function generateEnamelRods() {
+            enamelRods.length = 0;
+            const { scale, cx, cy } = getToothScale();
+            const w = scale * 0.6; // Width of tooth
+            const h = scale * 0.6;
+            const startX = cx - w / 2;
+            const startY = cy - h / 2;
+
+            // Define the Enamel Surface Curve (Top of tooth)
+            // Left Cusp -> Fossa -> Right Cusp
+            // We sample points along a quadratic bezier path
+            const steps = 60;
+
+            // Helper for quadratic bezier point
+            function getQBezier(t, p0, p1, p2) {
+                const x = (1 - t) * (1 - t) * p0.x + 2 * (1 - t) * t * p1.x + t * t * p2.x;
+                const y = (1 - t) * (1 - t) * p0.y + 2 * (1 - t) * t * p1.y + t * t * p2.y;
+                return { x, y };
+            }
+
+            // Helper for angle (normal)
+            function getQBezierAngle(t, p0, p1, p2) {
+                const dx = 2 * (1 - t) * (p1.x - p0.x) + 2 * t * (p2.x - p1.x);
+                const dy = 2 * (1 - t) * (p1.y - p0.y) + 2 * t * (p2.y - p1.y);
+                return Math.atan2(dy, dx) - Math.PI / 2; // Normal (perpendicular)
+            }
+
+            // Draw Enamel layer curve (Top half of molar)
+            // Visual anchor points relative to tooth box
+            const pStart = { x: startX, y: cy };
+            const pCuspL = { x: startX + w * 0.2, y: startY };
+            const pFossa = { x: startX + w * 0.5, y: startY + h * 0.3 };
+            const pCuspR = { x: startX + w * 0.8, y: startY };
+            const pEnd = { x: startX + w, y: cy };
+
+            // Two curves: Start->Fossa, Fossa->End
+
+            // Curve 1: Left Flank
+            for (let i = 0; i <= steps; i++) {
+                const t = i / steps;
+                const pos = getQBezier(t, pStart, pCuspL, pFossa);
+                const ang = getQBezierAngle(t, pStart, pCuspL, pFossa);
+                enamelRods.push(new EnamelRod(pos.x, pos.y, ang, 40, 6));
+            }
+            // Curve 2: Right Flank
+            for (let i = 0; i <= steps; i++) {
+                const t = i / steps;
+                const pos = getQBezier(t, pFossa, pCuspR, pEnd);
+                const ang = getQBezierAngle(t, pFossa, pCuspR, pEnd);
+                enamelRods.push(new EnamelRod(pos.x, pos.y, ang, 40, 6));
+            }
+        }
+
+        // --- PARTICLES ---
+        class Particle {
+            constructor(type) {
+                this.type = type; // 'acid' | 'mineral'
+                this.x = Math.random() * width;
+                this.y = -50;
+                this.vx = (Math.random() - 0.5) * 5;
+                this.vy = Math.random() * 5 + 5;
+                this.life = 1.0;
+                this.trail = [];
+            }
+
+            update() {
+                // Mouse Interaction (Force Field)
+                const dx = mouseX - this.x;
+                const dy = mouseY - this.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const force = Math.max(0, (200 - dist) / 200);
+
+                if (this.type === 'acid') {
+                    // Shield Repels Acid
+                    this.x -= dx * force * 0.1;
+                    this.y -= dy * force * 0.1;
+                } else {
+                    // Shield Attracts Mineral
+                    this.x += dx * force * 0.05;
+                    this.y += dy * force * 0.05;
+                }
+
+                // Physics
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy *= 0.98; // Drag
+
+                // Trail
+                this.trail.push({ x: this.x, y: this.y });
+                if (this.trail.length > 10) this.trail.shift();
+
+                // Kill offscreen
+                if (this.y > height + 50) this.life = 0;
+
+                // Collision with Enamel
+                // Simple optimization: only check if near tooth center
+                if (this.y > height * 0.3 && this.y < height * 0.6) {
+                    for (let ep of enamelRods) {
+                        // Check distance to tip of rod
+                        const tipX = ep.x + Math.cos(ep.angle) * ep.baseLength;
+                        const tipY = ep.y + Math.sin(ep.angle) * ep.baseLength;
+
+                        const d = Math.hypot(this.x - tipX, this.y - tipY);
+                        if (d < 20) {
+                            // HIT
+                            if (this.type === 'acid') {
+                                if (ep.health > 0) {
+                                    ep.health -= 0.1;
+                                    this.life = 0;
+                                    createSpark(this.x, this.y, '#F43F5E');
+                                    updateLog('Acid erosion detected.');
+                                }
+                            } else {
+                                if (ep.health < 1.0) {
+                                    ep.health += 0.2;
+                                    this.life = 0;
+                                    createSpark(this.x, this.y, '#2DD4BF');
+                                    updateLog('Remineralization successful.');
+                                }
+                            }
+                            return;
+                        }
+                    }
+                }
+            }
+
+            draw() {
+                ctx.beginPath();
+                // Trail
+                ctx.moveTo(this.trail[0].x, this.trail[0].y);
+                for (let p of this.trail) ctx.lineTo(p.x, p.y);
+
+                const color = this.type === 'acid' ? '#F43F5E' : '#2DD4BF';
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Glow
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = color;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        const sparks = [];
+        function createSpark(x, y, color) {
+            for (let i = 0; i < 5; i++) {
+                sparks.push({
+                    x, y,
+                    vx: (Math.random() - 0.5) * 10,
+                    vy: (Math.random() - 0.5) * 10,
+                    life: 1.0,
+                    color
+                });
+            }
+        }
+
+        function drawToothBody() {
+            const { scale, cx, cy } = getToothScale();
+            const w = scale * 0.6;
+            const h = scale * 0.6;
+            const startX = cx - w / 2;
+            const startY = cy - h / 2;
+
+            ctx.save();
+            // Draw Dentin (Inner Body)
+            ctx.beginPath();
+
+            // Same bezier logic as enamel but offset down
+            // Simplified Molar Shape
+            ctx.moveTo(startX, cy); // Left limit
+
+            // Roots
+            ctx.quadraticCurveTo(startX + w * 0.2, cy + h, startX + w * 0.45, cy + h * 0.5); // Left Root to Crotch
+            ctx.quadraticCurveTo(startX + w * 0.7, cy + h, startX + w, cy); // Crotch to Right Root
+
+            // Crown (Under Enamel)
+            ctx.lineTo(startX + w, cy);
+            ctx.quadraticCurveTo(startX + w * 0.8, startY + 20, startX + w * 0.5, startY + h * 0.3 + 20); // Right flank
+            ctx.quadraticCurveTo(startX + w * 0.2, startY + 20, startX, cy); // Left flank
+
+            ctx.closePath();
+
+            if (isXray) {
+                ctx.strokeStyle = '#FFFFFF';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(0,0,0,0.8)';
+                ctx.fill();
+
+                // Pulp Chamber & Nerves
+                ctx.beginPath();
+                const nerveW = w * 0.4;
+                const nerveH = h * 0.4;
+                const nx = cx - nerveW / 2;
+                const ny = cy - nerveH * 0.2;
+
+                ctx.moveTo(nx, ny);
+                // Root Canals
+                ctx.lineTo(nx, ny + nerveH + 50);
+                ctx.lineTo(nx + nerveW, ny + nerveH + 50);
+                ctx.lineTo(nx + nerveW, ny);
+                ctx.quadraticCurveTo(cx, ny - 30, nx, ny);
+
+                ctx.strokeStyle = '#F43F5E';
+                ctx.lineWidth = 4;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.shadowColor = '#F43F5E';
+                ctx.shadowBlur = 20;
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(244, 63, 94, 0.2)';
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+            } else {
+                // Realistic Dentin Gradient
+                const grad = ctx.createRadialGradient(cx, cy, 20, cx, cy, 300);
+                grad.addColorStop(0, '#FFF7ED'); // Light dentin
+                grad.addColorStop(1, '#FCD34D'); // Darker yellow dentin
+                ctx.fillStyle = grad;
+                ctx.fill();
+
+                // Inner shadow for volume
+                ctx.strokeStyle = 'rgba(217, 119, 6, 0.2)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+
+        // --- MAIN LOOP ---
+
+        function draw() {
+            // Clear
+            ctx.fillStyle = isXray ? '#000000' : '#0F172A';
+            ctx.fillRect(0, 0, width, height);
+
+            // Background Grid (Medical style)
+            if (!isXray) {
+                ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+                ctx.lineWidth = 1;
+                const gridSize = 50;
+                for (let x = 0; x < width; x += gridSize) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke(); }
+                for (let y = 0; y < height; y += gridSize) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke(); }
+            }
+
+            drawToothBody();
+
+            // Draw Enamel Rods
+            enamelRods.forEach(rod => rod.draw());
+
+            // Spawn Particles
+            if (!isXray && Math.random() < 0.15) particles.push(new Particle(Math.random() < 0.6 ? 'acid' : 'mineral'));
+
+            // Particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.update();
+                if (p.life <= 0) particles.splice(i, 1);
+                else p.draw();
+            }
+
+            // Sparks
+            for (let i = sparks.length - 1; i >= 0; i--) {
+                const s = sparks[i];
+                s.x += s.vx; s.y += s.vy; s.life -= 0.05;
+                ctx.fillStyle = s.color;
+                ctx.globalAlpha = s.life;
+                ctx.beginPath(); ctx.arc(s.x, s.y, 2, 0, Math.PI * 2); ctx.fill();
+                ctx.globalAlpha = 1;
+                if (s.life <= 0) sparks.splice(i, 1);
+            }
+
+            // Mouse Shield
+            if (!isXray) {
+                ctx.beginPath();
+                ctx.arc(mouseX, mouseY, 60, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(45, 212, 191, 0.4)';
+                ctx.stroke();
+                // Icon
+                ctx.font = '20px FontAwesome';
+                ctx.fillStyle = '#2DD4BF';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('\uf3ed', mouseX, mouseY); // Shield icon
+            }
+
+            // Update UI Stats
+            updateStats();
+
+            requestAnimationFrame(draw);
+        }
+
+        function updateStats() {
+            let totalHealth = 0;
+            enamelRods.forEach(rod => totalHealth += rod.health);
+            const pct = Math.round((totalHealth / enamelRods.length) * 100);
+
+            document.getElementById('health-val').innerText = pct + '%';
+            document.getElementById('health-bar').style.width = pct + '%';
+
+            // Calc pH based on acid count
+            const acidCount = particles.filter(p => p.type === 'acid').length;
+            const ph = Math.max(3.0, 7.5 - (acidCount * 0.1)).toFixed(1);
+            const phEl = document.getElementById('ph-val');
+            phEl.innerText = ph;
+            if (ph < 5.5) phEl.style.color = '#F43F5E';
+            else phEl.style.color = '#2DD4BF';
+        }
+
+        function updateLabelPositions() {
+            const c = document.getElementById('labels-container');
+            c.innerHTML = '';
+
+            const points = [
+                { t: "Enamel", x: width / 2 + 100, y: height * 0.35 },
+                { t: "Dentin", x: width / 2 + 80, y: height * 0.5 },
+                { t: "Pulp", x: width / 2 + 50, y: height * 0.6 }
+            ];
+
+            points.forEach(p => {
+                const mk = document.createElement('div');
+                mk.className = 'label-marker';
+                mk.style.left = p.x + 'px';
+                mk.style.top = p.y + 'px';
+                mk.innerHTML = `<div class="marker-dot"></div><div class="marker-text">${p.t}</div>`;
+                c.appendChild(mk);
+            });
+        }
+
+        function updateLog(msg) {
+            const log = document.getElementById('sys-log');
+            log.innerHTML = `> ${msg}<br>` + log.innerHTML;
+        }
+
+        // INIT
+        window.addEventListener('resize', resize);
+        window.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; });
+
+        window.toggleXray = function (state) {
+            isXray = state;
+            updateLog(state ? 'Switching to X-RAY Spectrometry...' : 'Resuming Optical View.');
+        }
+
+        resize();
+        draw();
+
+    </script>
+</body>
+
+</html>

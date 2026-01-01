@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Compound Interest Snowball</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #fff;
+            font-family: 'Montserrat', sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .ui {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 350px;
+            height: 100%;
+            background: #f8fafc;
+            border-right: 1px solid #e2e8f0;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 800;
+            color: #0f172a;
+        }
+
+        .control {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        label {
+            font-size: 12px;
+            font-weight: bold;
+            color: #64748b;
+            text-transform: uppercase;
+        }
+
+        input {
+            padding: 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 5px;
+        }
+
+        .btn-start {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+
+        .readout {
+            margin-top: auto;
+            padding-top: 20px;
+            border-top: 2px solid #e2e8f0;
+        }
+
+        .big-val {
+            font-size: 30px;
+            font-weight: 800;
+            color: #10b981;
+        }
+
+        .small-val {
+            font-size: 14px;
+            color: #64748b;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="ui">
+        <h1>THE WEALTH GARDEN</h1>
+
+        <div class="control">
+            <label>Initial Investment ($)</label>
+            <input type="number" id="inp-init" value="1000">
+        </div>
+
+        <div class="control">
+            <label>Interest Rate (%)</label>
+            <input type="number" id="inp-rate" value="5">
+        </div>
+
+        <div class="control">
+            <label>Time Scale (Speed)</label>
+            <input type="range" id="inp-speed" min="1" max="10" value="5">
+        </div>
+
+        <button class="btn-start" onclick="startSim()">PLANT SEED</button>
+
+        <div class="readout">
+            <div class="small-val">YEAR <span id="val-year">0</span></div>
+            <div class="big-val" id="val-total">$0</div>
+            <div class="small-val" style="margin-top:10px">LINEAR COMP: <span id="val-lin">$0</span></div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+
+        // Sim State
+        let YEAR = 0;
+        let PRINCIPAL = 1000;
+        let RATE = 0.05;
+        let TOTAL = 1000;
+        let LINEAR = 1000;
+
+        let RUNNING = false;
+
+        // Visual Tree
+        let TREE = []; // { x, y, angle, len, size, color }
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            // Draw background or static elements
+        }
+        window.addEventListener('resize', resize);
+
+        function startSim() {
+            PRINCIPAL = parseFloat(document.getElementById('inp-init').value);
+            RATE = parseFloat(document.getElementById('inp-rate').value) / 100;
+            YEAR = 0;
+            TOTAL = PRINCIPAL;
+            LINEAR = PRINCIPAL;
+            RUNNING = true;
+
+            // Reset Tree
+            TREE = [{ x: width * 0.6, y: height, angle: -Math.PI / 2, len: 100, width: 20, color: '#475569' }];
+        }
+
+        function update() {
+            if (!RUNNING) return;
+
+            const speed = parseInt(document.getElementById('inp-speed').value) * 0.02;
+            YEAR += speed;
+
+            // Compound Formula: P(1+r)^t
+            const newTotal = PRINCIPAL * Math.pow((1 + RATE), YEAR);
+
+            // Linear Formula: P + (P*r)*t
+            const newLinear = PRINCIPAL + (PRINCIPAL * RATE * YEAR);
+
+            TOTAL = newTotal;
+            LINEAR = newLinear;
+
+            // UI
+            document.getElementById('val-year').innerText = Math.floor(YEAR);
+            document.getElementById('val-total').innerText = "$" + Math.floor(TOTAL).toLocaleString();
+            document.getElementById('val-lin').innerText = "$" + Math.floor(LINEAR).toLocaleString();
+
+            // Grow Tree logic?
+            // "Fractal Tree triggered by simulation loop"
+            // Growth factor = TOTAL / PRINCIPAL
+            growTree(TOTAL / PRINCIPAL);
+        }
+
+        function growTree(growthFactor) {
+            // Recursive generation is expensive every frame.
+            // Instead, we just Draw the recursive tree based on the factor.
+            // Factor 1.0 = Trunk.
+            // Factor 2.0 = Level 1 branches.
+        }
+
+        // Recursive Draw
+        function drawTree(x, y, len, angle, wid, depth) {
+            ctx.beginPath();
+            ctx.strokeStyle = depth === 0 ? '#475569' : '#10b981';
+            ctx.lineWidth = wid;
+
+            const x2 = x + Math.cos(angle) * len;
+            const y2 = y + Math.sin(angle) * len;
+
+            ctx.moveTo(x, y);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+
+            if (depth > 0) {
+                // Decay
+                const newLen = len * 0.7;
+                const newWid = wid * 0.7;
+
+                // Spread based on Interest Rate?
+                // Higher Rate = Wider Spread?
+                const spread = 0.3 + (RATE * 2);
+
+                drawTree(x2, y2, newLen, angle - spread, newWid, depth - 1);
+                drawTree(x2, y2, newLen, angle + spread, newWid, depth - 1);
+            }
+        }
+
+        function loop() {
+            update();
+
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw Linear Stack (Left of Tree area)
+            // Stack of bills
+            const stackH = (LINEAR / PRINCIPAL) * 50; // pixels per X growth
+            ctx.fillStyle = '#94a3b8';
+            ctx.fillRect(400, height - stackH, 100, stackH);
+            ctx.fillStyle = '#64748b'; ctx.textAlign = 'center';
+            ctx.fillText("LINEAR", 450, height - 10);
+
+            // Draw Fractal Tree (Right)
+            // Depth depends on Growth Factor
+            // log base X of Growth?
+            // Let's cap depth at 10 to save CPU
+            // Depth = floor(YEAR / 2)?
+            const depth = Math.min(12, Math.floor(Math.log(TOTAL / PRINCIPAL) * 4));
+
+            // Start Trunk
+            if (RUNNING) drawTree(width * 0.7, height, 120, -Math.PI / 2, 15, depth);
+            else drawTree(width * 0.7, height, 50, -Math.PI / 2, 15, 0); // Seed
+
+            requestAnimationFrame(loop);
+        }
+
+        resize();
+        loop();
+
+    </script>
+</body>
+
+</html>

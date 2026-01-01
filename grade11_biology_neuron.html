@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Neuron Action Potential</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Share Tech', sans-serif;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        /* TOP: MECHANISM VIEW */
+        .mech-view {
+            flex: 1;
+            position: relative;
+            background: radial-gradient(circle at center, #1e293b, #0f172a);
+            border-bottom: 2px solid #334155;
+            overflow: hidden;
+        }
+
+        /* BOTTOM: GRAPH VIEW */
+        .graph-view {
+            height: 300px;
+            background: #000;
+            position: relative;
+            border-top: 1px solid #333;
+        }
+
+        /* UI OVERLAYS */
+        .ui-mech {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #fff;
+            pointer-events: none;
+        }
+
+        .ui-mech h2 {
+            font-size: 24px;
+            color: #38bdf8;
+            text-transform: uppercase;
+        }
+
+        .ion-legend {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            color: #fff;
+            font-size: 12px;
+        }
+
+        .ion-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            margin-bottom: 5px;
+        }
+
+        .shape-na {
+            width: 0;
+            height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-bottom: 12px solid #38bdf8;
+        }
+
+        .shape-k {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #fbbf24;
+        }
+
+        /* BUTTONS */
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 20px;
+            z-index: 10;
+        }
+
+        .btn-stim {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 50px;
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+            transition: all 0.1s;
+        }
+
+        .btn-stim:active {
+            transform: scale(0.95);
+            background: #dc2626;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.6);
+        }
+
+        .btn-stim:disabled {
+            background: #555;
+            cursor: wait;
+            box-shadow: none;
+        }
+
+        /* Graph Labels */
+        .y-axis-label {
+            position: absolute;
+            left: 10px;
+            color: #64748b;
+            font-size: 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- MECHANISM -->
+        <div class="mech-view" id="mech-container">
+            <canvas id="mech-canvas"></canvas>
+
+            <div class="ui-mech">
+                <h2>Axon Membrane</h2>
+                <div id="status-text" style="font-size:18px; color:#cbd5e1">Resting State (-70mV)</div>
+            </div>
+
+            <div class="ion-legend">
+                <div class="ion-item">
+                    <div class="shape-na"></div><span>Sodium (Na+) [Outside]</span>
+                </div>
+                <div class="ion-item">
+                    <div class="shape-k"></div><span>Potassium (K+) [Inside]</span>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button class="btn-stim" id="btn-stim" onclick="stimulate()">⚡ STIMULATE</button>
+            </div>
+        </div>
+
+        <!-- GRAPH -->
+        <div class="graph-view">
+            <canvas id="graph-canvas"></canvas>
+            <div class="y-axis-label" style="top:20px">+30mV</div>
+            <div class="y-axis-label" style="top:120px">-55mV (Threshold)</div>
+            <div class="y-axis-label" style="top:250px">-70mV (Resting)</div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * NEURON SIMULATOR
+         * Synchronizes a physics-based particle simulation (channel flow) with a time-series graph.
+         */
+
+        const cMech = document.getElementById('mech-canvas');
+        const ctxMech = cMech.getContext('2d');
+
+        const cGraph = document.getElementById('graph-canvas');
+        const ctxGraph = cGraph.getContext('2d');
+
+        const btnStim = document.getElementById('btn-stim');
+        const statusText = document.getElementById('status-text');
+
+        let W, H, GW, GH;
+
+        // --- SIMULATION MODEL ---
+        let VOLTAGE = -70; // mV
+        let STATE = 'RESTING'; // RESTING, DEPOLARIZING, REPOLARIZING, HYPERPOLARIZING
+        let TIME = 0;
+
+        // Constants
+        const RESTING_V = -70;
+        const THRESHOLD_V = -55;
+        const PEAK_V = 30;
+        const HYPER_V = -90;
+
+        // Channel States (0 = closed, 1 = open)
+        let GATES_NA = 0;
+        let GATES_K = 0;
+        let PUMP_ACTIVE = 1; // Na/K Pump always works slowly
+
+        // Particles
+        let IONS = [];
+
+        // Graph Data
+        let HISTORY = []; // {t, v}
+
+        function init() {
+            resize();
+            window.addEventListener('resize', resize);
+
+            // Spawn Ions
+            // Na+ mostly Top (Outside), K+ mostly Bottom (Inside)
+            // Membrane is at H/2.
+            // visual scale
+            for (let i = 0; i < 50; i++) spawnIon('NA', 'TOP');
+            for (let i = 0; i < 50; i++) spawnIon('K', 'BOT');
+            // Some leakage
+            for (let i = 0; i < 5; i++) spawnIon('NA', 'BOT');
+            for (let i = 0; i < 5; i++) spawnIon('K', 'TOP');
+
+            loop();
+        }
+
+        function resize() {
+            W = cMech.width = cMech.clientWidth;
+            H = cMech.height = cMech.clientHeight;
+            GW = cGraph.width = cGraph.clientWidth;
+            GH = cGraph.height = cGraph.clientHeight;
+        }
+
+        function spawnIon(type, side) {
+            const y = side === 'TOP' ? Math.random() * (H / 2 - 40) : Math.random() * (H / 2 - 40) + H / 2 + 40;
+            IONS.push({
+                type,
+                x: Math.random() * W,
+                y: y,
+                vx: (Math.random() - 0.5) * 2,
+                vy: (Math.random() - 0.5) * 2
+            });
+        }
+
+        window.stimulate = () => {
+            if (STATE !== 'RESTING') return;
+            VOLTAGE = -60; // Jumpstart
+            STATE = 'STIMULATED';
+            btnStim.disabled = true;
+        };
+
+        // --- PHYSICS LOOP ---
+        function updateModel() {
+            // Voltage Logic
+            if (STATE === 'RESTING') {
+                // Decay to -70
+                VOLTAGE += (RESTING_V - VOLTAGE) * 0.1;
+                GATES_NA = 0; GATES_K = 0;
+                statusText.innerText = `Resting State (${VOLTAGE.toFixed(1)}mV)`;
+            }
+
+            if (STATE === 'STIMULATED') {
+                // Failed initiation decay
+                VOLTAGE += 0.5; // Slow rise
+                if (VOLTAGE >= THRESHOLD_V) {
+                    STATE = 'DEPOLARIZING';
+                }
+            }
+
+            if (STATE === 'DEPOLARIZING') {
+                // Sodium Channels Open!
+                GATES_NA = 1;
+                VOLTAGE += 4.0; // Fast rise
+                statusText.innerText = "DEPOLARIZATION! Na+ Influx";
+                statusText.style.color = "#38bdf8";
+
+                if (VOLTAGE >= PEAK_V) {
+                    STATE = 'REPOLARIZING';
+                }
+            }
+
+            if (STATE === 'REPOLARIZING') {
+                // Na Closes, K Opens
+                GATES_NA = 0;
+                GATES_K = 1;
+                VOLTAGE -= 3.0; // Fast drop
+                statusText.innerText = "REPOLARIZATION! K+ Efflux";
+                statusText.style.color = "#fbbf24";
+
+                if (VOLTAGE <= HYPER_V) {
+                    STATE = 'HYPERPOLARIZING';
+                }
+            }
+
+            if (STATE === 'HYPERPOLARIZING') {
+                // All gates close, Pump works
+                GATES_K = 0;
+                VOLTAGE += (RESTING_V - VOLTAGE) * 0.05; // Slow recovery
+                statusText.innerText = "Refractory Period (Pumps reset)";
+                statusText.style.color = "#999";
+
+                if (Math.abs(VOLTAGE - RESTING_V) < 1) {
+                    STATE = 'RESTING';
+                    btnStim.disabled = false;
+                    statusText.style.color = "#fff";
+                }
+            }
+
+            // Ion Dynamics
+            // If Gates Open, ions flow across membrane (H/2)
+            // Na flows DOWN (Top -> Bot)
+            // K flows UP (Bot -> Top)
+
+            IONS.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+
+                // Bounce walls
+                if (p.x < 0 || p.x > W) p.vx *= -1;
+                if (p.y < 0 || p.y > H) p.vy *= -1;
+
+                // Membrane Collision/Passage
+                const memY = H / 2;
+                const MARGIN = 10;
+
+                // Check if crossing potential
+                if (p.y + p.vy > memY - MARGIN && p.y + p.vy < memY + MARGIN) {
+                    // Start of crossing
+                    let canPass = false;
+                    if (p.type === 'NA' && GATES_NA > 0) canPass = true;
+                    if (p.type === 'K' && GATES_K > 0) canPass = true;
+
+                    // Force Logic: Diffusion
+                    // NA (Top) wants to go Bot.
+                    // K (Bot) wants to go Top.
+
+                    if (canPass) {
+                        // Accelerate through
+                        if (p.type === 'NA') p.vy += 2.0; // Down tick
+                        if (p.type === 'K') p.vy -= 2.0; // Up tick
+                    } else {
+                        // Bounce off membrane
+                        if (p.y < memY) p.y = memY - MARGIN - 1; else p.y = memY + MARGIN + 1;
+                        p.vy *= -1;
+                    }
+                }
+
+                // Pump Logic (Active Transport - Resetting)
+                // Always active but slow.
+                // Moves Na UP, K DOWN (Against gradient).
+                // Only effectively works in background or during Hyper.
+                if (Math.random() < 0.005) { // 0.5% chance per frame
+                    // Teleport an Ion "back home" to simulate pumping
+                    if (p.type === 'NA' && p.y > memY) { // Na stuck inside
+                        p.y = 10; p.vy = 1; // Pumped out
+                    }
+                    if (p.type === 'K' && p.y < memY) { // K wanser outside
+                        p.y = H - 10; p.vy = -1; // Pumped in
+                    }
+                }
+            });
+
+            // History
+            TIME++;
+            HISTORY.push({ t: TIME, v: VOLTAGE });
+            if (HISTORY.length > GW) HISTORY.shift();
+        }
+
+        // --- RENDER ---
+        function drawMech() {
+            ctxMech.fillStyle = '#1e293b';
+            ctxMech.fillRect(0, 0, W, H);
+
+            // Membrane
+            const my = H / 2;
+            ctxMech.fillStyle = '#64748b';
+            ctxMech.fillRect(0, my - 10, W, 20); // Lipid Bilayer
+
+            // Draw Channels
+            // Visual representation of gates
+            const gates = 8;
+            for (let i = 0; i < gates; i++) {
+                const x = (W / gates) * (i + 0.5);
+                const isNa = i % 2 === 0;
+                const isOpen = (isNa ? GATES_NA : GATES_K) > 0;
+
+                const col = isNa ? '#0ea5e9' : '#eab308';
+
+                // Gate Frame
+                ctxMech.fillStyle = '#334155';
+                ctxMech.fillRect(x - 15, my - 12, 30, 24);
+
+                // Pore Color
+                ctxMech.fillStyle = isOpen ? col : '#000';
+                ctxMech.fillRect(x - 5, my - 12, 10, 24);
+
+                // Gate Flap animation
+                if (!isOpen) {
+                    ctxMech.fillStyle = '#fff';
+                    ctxMech.fillRect(x - 15, my, 30, 4); // Closed bar
+                }
+
+                // Label
+                ctxMech.fillStyle = '#fff'; ctxMech.font = '10px sans-serif'; ctxMech.textAlign = 'center';
+                ctxMech.fillText(isNa ? 'Na' : 'K', x, my + 25);
+            }
+
+            // Draw Ions
+            IONS.forEach(p => {
+                if (p.type === 'NA') {
+                    // Triangle
+                    ctxMech.fillStyle = '#38bdf8';
+                    drawTriangle(ctxMech, p.x, p.y, 8);
+                } else {
+                    // Circle
+                    ctxMech.fillStyle = '#fbbf24';
+                    ctxMech.beginPath(); ctxMech.arc(p.x, p.y, 4, 0, Math.PI * 2); ctxMech.fill();
+                }
+            });
+        }
+
+        function drawTriangle(ctx, x, y, size) {
+            ctx.beginPath();
+            ctx.moveTo(x, y - size / 2);
+            ctx.lineTo(x + size / 2, y + size / 2);
+            ctx.lineTo(x - size / 2, y + size / 2);
+            ctx.fill();
+        }
+
+        function drawGraph() {
+            ctxGraph.clearRect(0, 0, GW, GH); // Transparent on black CSS
+
+            // Grid
+            ctxGraph.strokeStyle = '#333'; ctxGraph.lineWidth = 1;
+            // Draw Y levels
+            const mapY = (v) => GH - ((v + 100) / 150) * GH; // range -100 to +50 (span 150)
+
+            // Levels
+            [30, 0, -55, -70].forEach(v => {
+                const y = mapY(v);
+                ctxGraph.beginPath(); ctxGraph.moveTo(0, y); ctxGraph.lineTo(GW, y); ctxGraph.stroke();
+            });
+
+            // Plot History
+            ctxGraph.strokeStyle = '#22c55e';
+            ctxGraph.lineWidth = 3;
+            ctxGraph.beginPath();
+
+            // Shift x so rightmost is current
+            // HISTORY index 0 is old.
+            // visual X = (index / Max) * GW? No, scrolling.
+
+            HISTORY.forEach((pt, i) => {
+                const x = GW - (HISTORY.length - i); // Quick pixel scroll
+                const y = mapY(pt.v);
+                if (i === 0) ctxGraph.moveTo(x, y); else ctxGraph.lineTo(x, y);
+            });
+            ctxGraph.stroke();
+
+            // Current Dot
+            if (HISTORY.length > 0) {
+                const last = HISTORY[HISTORY.length - 1];
+                const y = mapY(last.v);
+                ctxGraph.fillStyle = '#22c55e';
+                ctxGraph.beginPath(); ctxGraph.arc(GW, y, 5, 0, Math.PI * 2); ctxGraph.fill();
+
+                // Current Val Text
+                ctxGraph.fillStyle = '#fff'; ctxGraph.font = '20px monospace';
+                ctxGraph.textAlign = 'right';
+                ctxGraph.fillText(last.v.toFixed(1) + "mV", GW - 10, y - 10);
+            }
+        }
+
+        function loop() {
+            updateModel();
+            drawMech();
+            drawGraph();
+            requestAnimationFrame(loop);
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

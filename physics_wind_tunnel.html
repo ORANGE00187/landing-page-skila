@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aero-Dynamics Wind Tunnel - The Lab</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <style>
+        /* 
+         * =========================================
+         *  GLOBAL STYLE & THEME
+         * =========================================
+         */
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Orbitron:wght@400;700&display=swap');
+
+        :root {
+            --bg-deep: #0F172A;
+            --glass: rgba(15, 23, 42, 0.7);
+            --border: rgba(56, 189, 248, 0.2);
+            --neon-blue: #06B6D4;
+            --neon-pink: #F472B6;
+            --text-main: #E2E8F0;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: var(--bg-deep);
+            color: var(--text-main);
+            font-family: 'Orbitron', sans-serif;
+            user-select: none;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        /* 
+         * =========================================
+         *  HUD & INTERFACE
+         * =========================================
+         */
+        #hud-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            padding: 1.5rem;
+            box-sizing: border-box;
+            display: grid;
+            grid-template-areas:
+                "top top"
+                "left right"
+                "bottom bottom";
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: auto 1fr auto;
+        }
+
+        .panel {
+            pointer-events: auto;
+            background: var(--glass);
+            backdrop-filter: blur(8px);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 0.5rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+        }
+
+        .header {
+            grid-area: top;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--neon-blue);
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            margin: 0;
+            background: linear-gradient(90deg, #fff, var(--neon-blue));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .metrics-bar {
+            display: flex;
+            gap: 2rem;
+            font-family: 'JetBrains Mono';
+            font-size: 0.9rem;
+        }
+
+        .metric span {
+            color: var(--neon-pink);
+            font-weight: bold;
+        }
+
+        /* TOOLBAR (Shape Palette) */
+        .toolbar {
+            grid-area: bottom;
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            align-self: end;
+        }
+
+        .tool-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            color: var(--neon-blue);
+            width: 50px;
+            height: 50px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            transition: all 0.2s;
+        }
+
+        .tool-btn:hover,
+        .tool-btn.active {
+            background: var(--neon-blue);
+            color: #000;
+            box-shadow: 0 0 15px var(--neon-blue);
+            transform: translateY(-2px);
+        }
+
+        /* CONTROLS (Right Panel) */
+        .controls {
+            grid-area: right;
+            justify-self: end;
+            align-self: start;
+            width: 250px;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .control-group label {
+            display: flex;
+            justify-content: space-between;
+            font-family: 'JetBrains Mono';
+            font-size: 0.8rem;
+            margin-bottom: 5px;
+            color: #94a3b8;
+        }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 4px;
+            background: #334155;
+            border-radius: 2px;
+            outline: none;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--neon-pink);
+            cursor: pointer;
+            box-shadow: 0 0 10px var(--neon-pink);
+            border: 2px solid #fff;
+        }
+
+        .toggle-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-small {
+            flex: 1;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            color: #cbd5e1;
+            font-family: 'JetBrains Mono';
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .btn-small:hover {
+            background: rgba(56, 189, 248, 0.2);
+        }
+
+        .btn-small.active {
+            border-color: var(--neon-pink);
+            color: var(--neon-pink);
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="sim-canvas"></canvas>
+
+    <div id="hud-layer">
+
+        <div class="panel header">
+            <h1><i class="fas fa-wind"></i> Aero-Lab</h1>
+            <div class="metrics-bar">
+                <div class="metric">FLOW: <span id="val-flow">0.0</span> m/s</div>
+                <div class="metric">DENSITY: <span id="val-rho">1.225</span> kg/m³</div>
+                <div class="metric">DRAG COEFF: <span id="val-cd">--</span></div>
+            </div>
+        </div>
+
+        <div class="controls panel">
+
+            <div class="control-group">
+                <label>Wind Velocity <span id="lbl-speed">50%</span></label>
+                <input type="range" id="slider-speed" min="0" max="100" value="50">
+            </div>
+
+            <div class="control-group">
+                <label>Viscosity / Diffusion</label>
+                <input type="range" id="slider-visc" min="0" max="50" value="10">
+            </div>
+
+            <div class="control-group">
+                <label>Vorticity (Turbulence)</label>
+                <input type="range" id="slider-curl" min="0" max="50" value="30">
+            </div>
+
+            <div style="border-top: 1px solid var(--border); margin: 10px 0;"></div>
+
+            <label style="font-family:'JetBrains Mono'; font-size:0.8rem; color:#94a3b8; margin-bottom:5px;">Interaction
+                Mode</label>
+            <div class="toggle-row">
+                <button class="btn-small active" id="mode-draw" onclick="setMode('draw')">DRAW WALL</button>
+                <button class="btn-small" id="mode-dye" onclick="setMode('dye')">INJECT DYE</button>
+            </div>
+            <p style="font-size: 0.7rem; color: #64748b; margin-top: 5px;">
+                Left Click to Paint/Inject.<br>Right Click to Erase Wall.
+            </p>
+
+            <button class="btn-small" onclick="clearObstacles()"
+                style="width: 100%; margin-top: 10px; color: #ef4444; border-color: #ef4444;">CLEAR ALL
+                OBSTACLES</button>
+
+        </div>
+
+        <div class="toolbar panel">
+            <div class="tool-btn active" onclick="loadPreset('circle')" title="Cylinder">
+                <i class="far fa-circle"></i>
+            </div>
+            <div class="tool-btn" onclick="loadPreset('square')" title="Block">
+                <i class="far fa-square"></i>
+            </div>
+            <div class="tool-btn" onclick="loadPreset('airfoil')" title="Airfoil">
+                <i class="fas fa-feather-alt"></i>
+            </div>
+            <div class="tool-btn" onclick="loadPreset('bullet')" title="Bullet">
+                <i class="fas fa-rocket"></i>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 
+      =========================================
+       FLUID DYNAMICS ENGINE (NAVIER-STOKES)
+      =========================================
+    -->
+    <script>
+        /**
+         * AERO-DYNAMICS ENGINE
+         * Grid-based Eulerian Fluid Solver + Lagrangian Particle Advection
+         * Based on Jos Stam's "Stable Fluids", optimized for WebGL-like performance in 2D Canvas.
+         */
+
+        // CONFIGURATION
+        const N = 128; // Grid Resolution (N x N)
+        const ITER = 10; // Solver Iterations (Accuracy vs Speed)
+        const SCALE = 4; // Visual upscaling
+
+        let width, height;
+        let simSpeed = 1.0;
+        let diff = 0.0001; // Diffusion
+        let visc = 0.0001; // Viscosity
+        let vorticity = 5.0; // Curl Confinement strength
+
+        // ARRAYS (Typed for performance)
+        // 1D arrays representing 2D grid. Index = x + y * N
+        const size = (N + 2) * (N + 2);
+
+        let u = new Float32Array(size); // Velocity X
+        let v = new Float32Array(size); // Velocity Y
+        let u_prev = new Float32Array(size);
+        let v_prev = new Float32Array(size);
+        let dens = new Float32Array(size); // Density (Smoke)
+        let dens_prev = new Float32Array(size);
+        let s = new Float32Array(size); // Solid Boundaries (1 = fluid, 0 = wall)
+
+        // PARTICLES
+        const PARTICLES_COUNT = 3000;
+        const particles = new Float32Array(PARTICLES_COUNT * 4); // x, y, age, speed
+
+        // INTERACTION
+        let mode = 'draw'; // 'draw' or 'dye'
+        let inputSpeed = 0.5; // Wind tunnel input speed
+
+        // DOM
+        const canvas = document.getElementById('sim-canvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+
+        // ============================================
+        // FLUID SOLVER CORE
+        // ============================================
+
+        // Index Mapper
+        function IX(x, y) {
+            return x + (N + 2) * y;
+        }
+
+        // Add source (dye or velocity)
+        function add_source(x, s, dt) {
+            for (let i = 0; i < size; i++) x[i] += dt * s[i];
+        }
+
+        function set_bnd(b, x) {
+            // b: 0=density, 1=u(x), 2=v(y)
+            // Handle Walls
+            for (let i = 1; i <= N; i++) {
+                // If cell is solid, velocity is zero? handled by s array projection usually.
+                // Simple box bound:
+                x[IX(0, i)] = b === 1 ? -x[IX(1, i)] : x[IX(1, i)];
+                x[IX(N + 1, i)] = b === 1 ? -x[IX(N, i)] : x[IX(N, i)];
+                x[IX(i, 0)] = b === 2 ? -x[IX(i, 1)] : x[IX(i, 1)];
+                x[IX(i, N + 1)] = b === 2 ? -x[IX(i, N)] : x[IX(i, N)];
+            }
+
+            x[IX(0, 0)] = 0.5 * (x[IX(1, 0)] + x[IX(0, 1)]);
+            x[IX(0, N + 1)] = 0.5 * (x[IX(1, N + 1)] + x[IX(0, N)]);
+            x[IX(N + 1, 0)] = 0.5 * (x[IX(N, 0)] + x[IX(N + 1, 1)]);
+            x[IX(N + 1, N + 1)] = 0.5 * (x[IX(N, N + 1)] + x[IX(N + 1, N)]);
+        }
+
+        function lin_solve(b, x, x0, a, c) {
+            const recipC = 1.0 / c;
+            for (let k = 0; k < ITER; k++) {
+                for (let j = 1; j <= N; j++) {
+                    for (let i = 1; i <= N; i++) {
+                        if (s[IX(i, j)] === 0) continue; // Solid
+                        x[IX(i, j)] = (x0[IX(i, j)] + a * (x[IX(i + 1, j)] + x[IX(i - 1, j)] + x[IX(i, j + 1)] + x[IX(i, j - 1)])) * recipC;
+                    }
+                }
+                set_bnd(b, x);
+            }
+        }
+
+        function diffuse(b, x, x0, diff, dt) {
+            const a = dt * diff * N * N;
+            lin_solve(b, x, x0, a, 1 + 4 * a);
+        }
+
+        function advect(b, d, d0, u, v, dt) {
+            let i0, j0, i1, j1;
+            let x, y, s0, t0, s1, t1, dt0;
+
+            dt0 = dt * N;
+            for (let j = 1; j <= N; j++) {
+                for (let i = 1; i <= N; i++) {
+                    if (s[IX(i, j)] === 0) continue; // Skip solids
+
+                    x = i - dt0 * u[IX(i, j)];
+                    y = j - dt0 * v[IX(i, j)];
+
+                    if (x < 0.5) x = 0.5; if (x > N + 0.5) x = N + 0.5;
+                    i0 = Math.floor(x); i1 = i0 + 1;
+                    if (y < 0.5) y = 0.5; if (y > N + 0.5) y = N + 0.5;
+                    j0 = Math.floor(y); j1 = j0 + 1;
+
+                    s1 = x - i0; s0 = 1 - s1;
+                    t1 = y - j0; t0 = 1 - t1;
+
+                    d[IX(i, j)] = s0 * (t0 * d0[IX(i0, j0)] + t1 * d0[IX(i0, j1)]) +
+                        s1 * (t0 * d0[IX(i1, j0)] + t1 * d0[IX(i1, j1)]);
+                }
+            }
+            set_bnd(b, d);
+        }
+
+        function project(u, v, p, div) {
+            for (let j = 1; j <= N; j++) {
+                for (let i = 1; i <= N; i++) {
+                    div[IX(i, j)] = -0.5 * (u[IX(i + 1, j)] - u[IX(i - 1, j)] + v[IX(i, j + 1)] - v[IX(i, j - 1)]) / N;
+                    p[IX(i, j)] = 0;
+                }
+            }
+            set_bnd(0, div);
+            set_bnd(0, p);
+            lin_solve(0, p, div, 1, 4);
+
+            for (let j = 1; j <= N; j++) {
+                for (let i = 1; i <= N; i++) {
+                    if (s[IX(i, j)] === 0) { // Enforce 0 vel inside solids
+                        u[IX(i, j)] = 0;
+                        v[IX(i, j)] = 0;
+                        continue;
+                    }
+                    u[IX(i, j)] -= 0.5 * N * (p[IX(i + 1, j)] - p[IX(i - 1, j)]);
+                    v[IX(i, j)] -= 0.5 * N * (p[IX(i, j + 1)] - p[IX(i, j - 1)]);
+                }
+            }
+            set_bnd(1, u);
+            set_bnd(2, v);
+        }
+
+        // Vorticity Confinement (Pseudo Turbulence)
+        function curl(i, j) {
+            const dv_dx = (v[IX(i + 1, j)] - v[IX(i - 1, j)]) * 0.5;
+            const du_dy = (u[IX(i, j + 1)] - u[IX(i, j - 1)]) * 0.5;
+            return dv_dx - du_dy;
+        }
+
+        function vorticity_confinement(dt) {
+            if (vorticity <= 0) return;
+            const curlGrid = new Float32Array(size); // Temp allocation, expensive in loop?
+            // Actually let's reuse u_prev as temp since we reset it later
+
+            for (let j = 1; j <= N; j++) {
+                for (let i = 1; i <= N; i++) {
+                    curlGrid[IX(i, j)] = Math.abs(curl(i, j));
+                }
+            }
+
+            for (let j = 2; j < N - 1; j++) {
+                for (let i = 2; i < N - 1; i++) {
+                    if (s[IX(i, j)] === 0) continue;
+
+                    // Gradient of curl magnitude
+                    const dw_dx = (curlGrid[IX(i + 1, j)] - curlGrid[IX(i - 1, j)]) * 0.5;
+                    const dw_dy = (curlGrid[IX(i, j + 1)] - curlGrid[IX(i, j - 1)]) * 0.5;
+
+                    let len = Math.sqrt(dw_dx * dw_dx + dw_dy * dw_dy);
+                    if (len < 0.0001) len = 1; // Avoid div zero
+
+                    const nx = dw_dx / len;
+                    const ny = dw_dy / len;
+
+                    const c = curl(i, j);
+
+                    // Force = N xCurl * Strength
+                    // Cross prod in 2D: (nx, ny, 0) x (0, 0, c) -> (ny*c, -nx*c)
+
+                    u[IX(i, j)] += dt * vorticity * (ny * c);
+                    v[IX(i, j)] += dt * vorticity * (-nx * c);
+                }
+            }
+        }
+
+        // STEP FUNCTION
+        function fluid_step(dt) {
+            // Wall boundaries for Wind Tunnel (Left Inflow, Right Outflow)
+            for (let j = 1; j <= N; j++) {
+                // Inflow
+                u[IX(1, j)] = inputSpeed * 5;
+                v[IX(1, j)] = 0;
+                dens[IX(1, j)] = inputSpeed; // Continuous smoke
+
+                // Outflow (Just copy Prev)
+                u[IX(N, j)] = u[IX(N - 1, j)];
+                v[IX(N, j)] = v[IX(N - 1, j)];
+            }
+
+            diffuse(1, u_prev, u, visc, dt);
+            diffuse(2, v_prev, v, visc, dt);
+            project(u_prev, v_prev, u, v);
+            advect(1, u, u_prev, u_prev, v_prev, dt);
+            advect(2, v, v_prev, u_prev, v_prev, dt);
+            project(u, v, u_prev, v_prev);
+
+            vorticity_confinement(dt);
+
+            diffuse(0, dens_prev, dens, diff, dt);
+            advect(0, dens, dens_prev, u, v, dt);
+        }
+
+        // ============================================
+        // PARTICLES & RENDERING
+        // ============================================
+
+        function initParticles() {
+            for (let i = 0; i < PARTICLES_COUNT; i++) {
+                spawnParticle(i, true);
+            }
+        }
+
+        function spawnParticle(i, randomX) {
+            // New Arraybuffer structure:
+            // i*4 + 0 : x
+            // i*4 + 1 : y
+            // i*4 + 2 : life (0-1)
+            // i*4 + 3 : speed (for color)
+
+            particles[i * 4 + 0] = randomX ? Math.random() * N : 1;
+            particles[i * 4 + 1] = Math.random() * N;
+            particles[i * 4 + 2] = Math.random(); // staggered life
+            particles[i * 4 + 3] = 0;
+        }
+
+        function updateParticles(dt) {
+            for (let i = 0; i < PARTICLES_COUNT; i++) {
+                let x = particles[i * 4 + 0];
+                let y = particles[i * 4 + 1];
+
+                // Interpolate Velocity Grid
+                // Clamp
+                if (x < 1) x = 1; if (x > N) x = N;
+                if (y < 1) y = 1; if (y > N) y = N;
+
+                const cellX = Math.floor(x);
+                const cellY = Math.floor(y);
+                const idx = IX(cellX, cellY);
+
+                const vx = u[idx];
+                const vy = v[idx];
+
+                // Advect
+                x += vx * dt * N * 2; // scale speed
+                y += vy * dt * N * 2;
+
+                // Wall Collision
+                if (s[IX(Math.round(x), Math.round(y))] === 0) {
+                    // Simple Kill/Respawn on hit
+                    particles[i * 4 + 2] = 0;
+                }
+
+                // Respawn
+                particles[i * 4 + 2] -= 0.005; // decay
+                if (particles[i * 4 + 2] <= 0 || x > N || x < 0 || y > N || y < 0) {
+                    spawnParticle(i, false); // respawn at inlet
+                } else {
+                    particles[i * 4 + 0] = x;
+                    particles[i * 4 + 1] = y;
+                    particles[i * 4 + 3] = Math.sqrt(vx * vx + vy * vy); // speed
+                }
+            }
+        }
+
+        function render() {
+            // Fade Effect
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.5)'; // deep blue fade
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw Obstacles (Solids)
+            ctx.fillStyle = 'rgba(255,255,255,0.1)';
+            const cellW = width / N;
+            const cellH = height / N;
+
+            for (let j = 1; j <= N; j++) {
+                for (let i = 1; i <= N; i++) {
+                    if (s[IX(i, j)] === 0) {
+                        ctx.fillRect((i - 1) * cellW, (j - 1) * cellH, cellW + 1, cellH + 1); // +1 to seal gaps
+                        // Boundary Glow
+                        // ctx.strokeStyle = '#fff'; ctx.strokeRect... too heavy
+                    }
+                }
+            }
+
+            // Draw Particles
+            // Batch drawing technically better but raw dots ok
+            for (let i = 0; i < PARTICLES_COUNT; i++) {
+                const x = (particles[i * 4 + 0] - 1) / N * width;
+                const y = (particles[i * 4 + 1] - 1) / N * height;
+                const spd = particles[i * 4 + 3];
+
+                // Color based on speed (Cyberpunk Heatmap)
+                // Low Spd: Cyan (#06b6d4)
+                // High Spd: Magenta (#f472b6)
+                // Lerp?
+                const t = Math.min(1, spd * 2); // sensitivity
+
+                // Manual Lerp for perf
+                // Cyan: 6, 182, 212
+                // Pink: 244, 114, 182
+                const r = 6 + (244 - 6) * t;
+                const g = 182 + (114 - 182) * t;
+                const b = 212 + (182 - 212) * t;
+
+                ctx.fillStyle = `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+                ctx.fillRect(x, y, 2, 2);
+            }
+        }
+
+        // ============================================
+        // APP LOGIC
+        // ============================================
+        let dragging = false;
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            width = canvas.width;
+            height = canvas.height;
+        }
+
+        function resetGrid() {
+            u.fill(0); v.fill(0); u_prev.fill(0); v_prev.fill(0);
+            dens.fill(0); dens_prev.fill(0);
+            s.fill(1);
+        }
+
+        function loadPreset(shape) {
+            clearObstacles();
+            const cx = N / 2, cy = N / 2;
+
+            if (shape === 'square') {
+                for (let y = cy - 10; y < cy + 10; y++)
+                    for (let x = cx - 10; x < cx + 10; x++) s[IX(x, y)] = 0;
+            }
+            if (shape === 'circle') {
+                for (let y = 0; y <= N; y++)
+                    for (let x = 0; x <= N; x++)
+                        if (Math.hypot(x - cx, y - cy) < 12) s[IX(x, y)] = 0;
+            }
+            if (shape === 'airfoil') {
+                // Approximate Joukowsky or just drawing a teardrop
+                for (let x = cx - 15; x < cx + 15; x++) {
+                    for (let y = cy - 10; y < cy + 10; y++) {
+                        // Teardrop calc
+                        const dx = (x - (cx - 15)) / 30; // 0 to 1
+                        const halfW = 0.2969 * Math.sqrt(dx) - 0.1260 * dx - 0.3516 * dx * dx + 0.2843 * dx * dx * dx - 0.1015 * dx * dx * dx * dx; // NACA 0012 approx
+                        const thick = halfW * 30; // Scale
+                        if (Math.abs(y - cy) < thick) s[IX(x, y)] = 0;
+                    }
+                }
+            }
+            if (shape === 'bullet') {
+                for (let x = cx - 10; x < cx + 10; x++) {
+                    for (let y = cy - 8; y < cy + 8; y++) {
+                        if (x > cx) { if (Math.abs(y - cy) < 8) s[IX(x, y)] = 0; } // Flat back
+                        else { if (Math.hypot(x - cx, y - cy) < 8) s[IX(x, y)] = 0; } // Round nose
+                    }
+                }
+            }
+            updateDragMetric();
+        }
+
+        function clearObstacles() {
+            s.fill(1); // Set all to fluid
+            // Walls are implicit in solver bounds
+        }
+
+        // Interaction
+        function handleInput(x, y, isRightClick) {
+            const gridX = Math.floor((x / width) * N);
+            const gridY = Math.floor((y / height) * N);
+
+            if (gridX < 1 || gridX > N || gridY < 1 || gridY > N) return;
+
+            if (mode === 'draw') {
+                const brushSize = 2;
+                for (let j = -brushSize; j <= brushSize; j++)
+                    for (let i = -brushSize; i <= brushSize; i++)
+                        if (IX(gridX + i, gridY + j) < size)
+                            s[IX(gridX + i, gridY + j)] = isRightClick ? 1 : 0;
+            } else if (mode === 'dye') {
+                // Add lots of density
+                dens[IX(gridX, gridY)] = 100;
+                // Add burst velocity?
+                u[IX(gridX, gridY)] += 10;
+            }
+        }
+
+        // Metrics
+        function updateDragMetric() {
+            // Approx Drag Coeff based on solidfrontal area and downstream turbulence 
+            // This is "Fake" but plausible visually.
+            // Count solids
+            let solidCount = 0;
+            for (let i = 0; i < size; i++) if (s[i] === 0) solidCount++;
+
+            // More solids = more drag usually
+            // More turbulence (vorticity setting) adds to CD
+            let cd = solidCount > 0 ? (0.2 + (solidCount / 1000) * 0.5) : 0;
+            document.getElementById('val-cd').innerText = cd.toFixed(3);
+        }
+
+        function setMode(m) {
+            mode = m;
+            document.getElementById('mode-draw').classList.toggle('active', m === 'draw');
+            document.getElementById('mode-dye').classList.toggle('active', m === 'dye');
+        }
+
+        window.addEventListener('resize', resize);
+
+        canvas.addEventListener('mousedown', e => {
+            dragging = true;
+            handleInput(e.clientX, e.clientY, e.button === 2);
+        });
+        window.addEventListener('mousemove', e => {
+            if (dragging) handleInput(e.clientX, e.clientY, e.buttons === 2);
+        });
+        window.addEventListener('mouseup', () => dragging = false);
+        canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+        // Sliders
+        document.getElementById('slider-speed').oninput = e => {
+            inputSpeed = e.target.value / 100;
+            document.getElementById('lbl-speed').innerText = e.target.value + '%';
+            document.getElementById('val-flow').innerText = (inputSpeed * 120).toFixed(1);
+        };
+        document.getElementById('slider-visc').oninput = e => visc = e.target.value / 100000;
+        document.getElementById('slider-curl').oninput = e => vorticity = e.target.value / 4;
+
+        // Loop
+        function loop() {
+            fluid_step(0.1); // dt
+            updateParticles(0.1);
+            render();
+            requestAnimationFrame(loop);
+        }
+
+        // Start
+        resize();
+        resetGrid();
+        initParticles();
+        loadPreset('airfoil'); // Start with something cool
+        loop();
+
+    </script>
+</body>
+
+</html>

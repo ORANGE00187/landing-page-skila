@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Recursion Stack Tower</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #0f172a;
+            font-family: 'Fira Code', monospace;
+            color: white;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* CODE EDITOR VIEW */
+        .editor-pane {
+            width: 40%;
+            background: #1e293b;
+            padding: 20px;
+            border-right: 1px solid #334155;
+            display: flex;
+            flex-direction: column;
+        }
+
+        h2 {
+            font-size: 20px;
+            color: #38bdf8;
+            margin-bottom: 20px;
+        }
+
+        .code-display {
+            background: #0f172a;
+            padding: 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #d1d5db;
+            line-height: 1.6;
+            border: 1px solid #334155;
+            position: relative;
+        }
+
+        .highlight-line {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 22px;
+            background: rgba(255, 255, 0, 0.1);
+            border-left: 2px solid #facc15;
+            display: none;
+            pointer-events: none;
+        }
+
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        input[type=number] {
+            background: transparent;
+            border: 1px solid #475569;
+            padding: 5px;
+            color: white;
+            width: 60px;
+            text-align: center;
+        }
+
+        .btn-run {
+            background: #22c55e;
+            border: none;
+            padding: 10px 20px;
+            color: black;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        .btn-run:active {
+            transform: scale(0.95);
+        }
+
+        .btn-run:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        /* VISUALIZATION PANE */
+        .vis-pane {
+            flex: 1;
+            position: relative;
+            background: radial-gradient(circle at center, #1e293b, #000);
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            padding-bottom: 20px;
+        }
+
+        canvas {
+            border-bottom: 4px solid #334155;
+        }
+
+        .stack-label {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #64748b;
+            font-size: 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="editor-pane">
+            <h2>FACTORIAL ENGINE</h2>
+
+            <div class="code-display" id="code-box">
+                <div id="hl" class="highlight-line"></div>
+                <span id="L1">function factorial(n) {</span>
+                <span id="L2"> if (n === 1) {</span>
+                <span id="L3"> return 1;</span>
+                <span id="L4"> } else {</span>
+                <span id="L5"> let prev = factorial(n - 1);</span>
+                <span id="L6"> return n * prev;</span>
+                <span id="L7"> }</span>
+                <span id="L8">}</span>
+            </div>
+
+            <div class="controls">
+                <span>Input n = </span>
+                <input type="number" id="inp-n" value="5" min="1" max="8">
+                <button class="btn-run" id="btn-run" onclick="startSim()">RUN SIMULATION</button>
+            </div>
+
+            <div id="status-log" style="margin-top:20px; font-size:12px; height:200px; overflow-y:auto; color:#94a3b8;">
+                > Ready.
+            </div>
+        </div>
+
+        <div class="vis-pane">
+            <canvas id="canvas"></canvas>
+            <div class="stack-label">STACK MEMORY (LIFO)</div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * RECURSION STACK VISUALIZER
+         * Animates the Call Stack frames pushing and popping.
+         */
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const hl = document.getElementById('hl');
+        const statusLog = document.getElementById('status-log');
+        const btnRun = document.getElementById('btn-run');
+
+        let width, height;
+
+        // --- SIM DATA ---
+        let STACK = []; // { n, result, state: 'CALL'|'WAIT'|'RETURN', y: pos_anim }
+        let RUNNING = false;
+        let ERROR_MODE = false; // Stack overflow visual
+
+        async function startSim() {
+            if (RUNNING) return;
+            const n = parseInt(document.getElementById('inp-n').value);
+            if (n > 100) { triggerOverflow(); return; } // Easter egg
+
+            RUNNING = true;
+            btnRun.disabled = true;
+            STACK = [];
+            log(`Starting factorial(${n})...`);
+
+            // Recursive Logic with Await for Animation
+            await doFactorial(n);
+
+            RUNNING = false;
+            btnRun.disabled = false;
+            log("Process Finished.");
+        }
+
+        async function doFactorial(n) {
+            // 1. PUSH FRAME
+            const frame = { n, result: null, state: 'CALL', y: -100, targetY: STACK.length * 60 };
+            STACK.push(frame); // Top of stack is End of Array
+
+            highlight(1);
+            log(`Call factorial(${n}) - Push Stack`);
+            await wait(800);
+
+            // Animate Drop
+            // Handled by loop, just wait
+
+            highlight(2);
+            await wait(500);
+
+            if (n === 1) {
+                highlight(3);
+                log(`Base case reached (n=1). Returning 1.`);
+                frame.state = 'RETURN';
+                frame.result = 1;
+                await wait(800);
+
+                // POP
+                highlight(8);
+                await popFrame(1);
+                return 1;
+            } else {
+                highlight(5);
+                log(`Recursing: Needs factorial(${n - 1})...`);
+                frame.state = 'WAIT';
+                await wait(500);
+
+                const prev = await doFactorial(n - 1);
+
+                // RESUME
+                highlight(6);
+                const res = n * prev;
+                frame.result = res;
+                frame.state = 'RETURN';
+                log(`Resolved factorial(${n}): ${n} * ${prev} = ${res}`);
+                await wait(1000);
+
+                highlight(8);
+                await popFrame(res);
+                return res;
+            }
+        }
+
+        async function popFrame(val) {
+            // Visual pop
+            const frame = STACK[STACK.length - 1];
+            // An effect handled in render
+
+            // Remove
+            STACK.pop();
+        }
+
+        function triggerOverflow() {
+            // Simple visual effect
+            ERROR_MODE = true;
+            log("STACK OVERFLOW ERROR!");
+            // Shake visual in loop
+        }
+
+        // --- HELPERS ---
+        function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+        function log(m) {
+            const d = document.createElement('div'); d.innerText = "> " + m;
+            statusLog.prepend(d);
+        }
+        function highlight(lineNum) {
+            const el = document.getElementById('L' + lineNum);
+            if (el) {
+                hl.style.display = 'block';
+                hl.style.top = el.offsetTop + "px";
+            }
+        }
+
+        // --- RENDER LOOP ---
+        function resize() {
+            width = canvas.width = 400; // Fixed width for stick
+            height = canvas.height = document.querySelector('.vis-pane').offsetHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function loop() {
+            ctx.fillStyle = '#0f172a'; // Clear transparent? No, blend
+            ctx.clearRect(0, 0, width, height);
+
+            const cx = width / 2;
+            const floor = height - 50;
+
+            // Base
+            ctx.fillStyle = '#334155';
+            ctx.fillRect(cx - 100, floor, 200, 10);
+
+            // Draw Stack Frames
+            STACK.forEach((frame, i) => {
+                // Determine Y target
+                // i=0 is bottom.
+                const targetY = floor - (i + 1) * 60;
+
+                // Anim Lerp
+                if (frame.y === -100) frame.y = -60; // Spawn top
+                if (frame.y > targetY) frame.y += (targetY - frame.y) * 0.1; // Drop down
+                else frame.y = targetY; // Snap
+
+                // Color based on state
+                let col = '#3b82f6'; // Blue Call
+                if (frame.state === 'WAIT') col = '#64748b'; // Gray waiting
+                if (frame.state === 'RETURN') col = '#22c55e'; // Green Return
+
+                // Box
+                ctx.fillStyle = col;
+                ctx.shadowBlur = 10; ctx.shadowColor = col;
+                ctx.fillRect(cx - 80, frame.y, 160, 50);
+                ctx.shadowBlur = 0;
+
+                // Text
+                ctx.fillStyle = '#fff';
+                ctx.font = '16px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+
+                let txt = `factorial(${frame.n})`;
+                if (frame.state === 'RETURN') txt += ` = ${frame.result}`;
+                else if (frame.state === 'WAIT') txt += ` [WAITING]`;
+
+                ctx.fillText(txt, cx, frame.y + 25);
+            });
+
+            if (ERROR_MODE) {
+                ctx.save();
+                ctx.translate(Math.random() * 10, Math.random() * 10);
+                ctx.fillStyle = 'red';
+                ctx.font = '40px monospace';
+                ctx.fillText("STACK OVERFLOW", width / 2, height / 2);
+                ctx.restore();
+            }
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+
+    </script>
+</body>
+
+</html>

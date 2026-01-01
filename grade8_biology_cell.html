@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Cell City Tycoon</title>
+    <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #0f172a;
+            font-family: 'Exo 2', sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .ui-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            background: rgba(15, 23, 42, 0.9);
+            border-bottom: 2px solid #334155;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 40px;
+            color: #fff;
+        }
+
+        .res {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 18px;
+        }
+
+        .icon {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            font-weight: bold;
+        }
+
+        .glucose {
+            color: #fbbf24;
+        }
+
+        .glucose .icon {
+            background: #fbbf24;
+            color: #000;
+        }
+
+        .atp {
+            color: #4ade80;
+        }
+
+        .atp .icon {
+            background: #4ade80;
+            color: #000;
+        }
+
+        .protein {
+            color: #60a5fa;
+        }
+
+        .protein .icon {
+            background: #60a5fa;
+            color: #000;
+        }
+
+        .toolbar {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 20px;
+        }
+
+        .tool {
+            width: 80px;
+            height: 80px;
+            background: #1e293b;
+            border: 2px solid #475569;
+            border-radius: 10px;
+            cursor: pointer;
+            color: #fff;
+            text-align: center;
+            font-size: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .tool:hover {
+            border-color: #fff;
+            transform: translateY(-5px);
+        }
+
+        .tool.active {
+            background: #334155;
+            border-color: #4ade80;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="ui-bar">
+        <div class="res glucose">
+            <div class="icon">G</div> <span id="gl-val">100</span>
+        </div>
+        <div class="res atp">
+            <div class="icon">A</div> <span id="atp-val">50</span>
+        </div>
+        <div class="res protein">
+            <div class="icon">P</div> <span id="pr-val">0</span>
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <div class="tool" onclick="action('import')">
+            <span class="text-2xl mb-1">🍬</span>
+            Import Glucose
+        </div>
+        <div class="tool" onclick="action('mito')">
+            <span class="text-2xl mb-1">⚡</span>
+            Power Mitochondria
+        </div>
+        <div class="tool" onclick="action('ribo')">
+            <span class="text-2xl mb-1">🧬</span>
+            Synthesize Protein
+        </div>
+        <div class="tool" onclick="action('clean')">
+            <span class="text-2xl mb-1">🧹</span>
+            Lysosome Clean
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Sim State
+        let RES = { glucose: 100, atp: 50, protein: 0 };
+        let WASTE = 0;
+
+        // Entities
+        let TRUCKS = []; // Glucose Transporters
+        let FACTORIES = []; // Organelles
+        let ROBOTS = []; // Proteins
+        let TRASH = [];
+
+        // Setup Map
+        let WIDTH, HEIGHT;
+
+        function resize() {
+            WIDTH = canvas.width = window.innerWidth;
+            HEIGHT = canvas.height = window.innerHeight;
+            initCity();
+        }
+        window.addEventListener('resize', resize);
+
+        function initCity() {
+            FACTORIES = [];
+            // Nucleus (City Hall) Center
+            FACTORIES.push({ type: 'nucleus', x: WIDTH / 2, y: HEIGHT / 2, r: 80, color: '#a855f7' });
+
+            // Mitochondria (Power Plants)
+            FACTORIES.push({ type: 'mito', x: WIDTH / 2 - 200, y: HEIGHT / 2 - 100, r: 50, color: '#ef4444', active: false });
+            FACTORIES.push({ type: 'mito', x: WIDTH / 2 + 200, y: HEIGHT / 2 + 100, r: 50, color: '#ef4444', active: false });
+
+            // Ribosomes (Factories)
+            FACTORIES.push({ type: 'ribo', x: WIDTH / 2 - 150, y: HEIGHT / 2 + 150, r: 40, color: '#3b82f6', active: false });
+            FACTORIES.push({ type: 'ribo', x: WIDTH / 2 + 150, y: HEIGHT / 2 - 150, r: 40, color: '#3b82f6', active: false });
+        }
+
+        window.action = (act) => {
+            if (act === 'import') {
+                // Spawn Glucose Truck from edge
+                TRUCKS.push({
+                    x: 0, y: Math.random() * HEIGHT,
+                    tx: WIDTH / 2, ty: HEIGHT / 2, // Head to center
+                    type: 'glucose', color: '#fbbf24', size: 10
+                });
+            }
+            if (act === 'mito') {
+                // Consume Glucose -> Make ATP
+                if (RES.glucose >= 10) {
+                    RES.glucose -= 10;
+                    RES.atp += 20;
+                    animateEffect('mito');
+                }
+            }
+            if (act === 'ribo') {
+                // Consume ATP -> Make Protein
+                if (RES.atp >= 10) {
+                    RES.atp -= 10;
+                    RES.protein += 5;
+                    animateEffect('ribo');
+                    // Spawn Robot
+                    ROBOTS.push({
+                        x: WIDTH / 2, y: HEIGHT / 2,
+                        vx: (Math.random() - 0.5) * 2, vy: (Math.random() - 0.5) * 2,
+                        type: 'protein'
+                    });
+                }
+            }
+            if (act === 'clean') {
+                if (RES.atp >= 5) {
+                    RES.atp -= 5;
+                    TRASH = []; // Instant clean for sim simplicity
+                }
+            }
+            updateUI();
+        };
+
+        function animateEffect(type) {
+            FACTORIES.filter(f => f.type === type).forEach(f => {
+                f.pulse = 1.5;
+            });
+        }
+
+        function updateUI() {
+            document.getElementById('gl-val').innerText = RES.glucose;
+            document.getElementById('atp-val').innerText = RES.atp;
+            document.getElementById('pr-val').innerText = RES.protein;
+        }
+
+        function loop() {
+            // Update
+            // Waste generation
+            if (Math.random() > 0.98) {
+                TRASH.push({ x: Math.random() * WIDTH, y: Math.random() * HEIGHT });
+                WASTE++;
+            }
+
+            // Trucks Move
+            TRUCKS.forEach((t, i) => {
+                let dx = t.tx - t.x; let dy = t.ty - t.y;
+                let d = Math.hypot(dx, dy);
+                if (d < 10) {
+                    // Arrived
+                    RES.glucose += 5;
+                    TRUCKS.splice(i, 1);
+                    updateUI();
+                } else {
+                    t.x += (dx / d) * 2; t.y += (dy / d) * 2;
+                }
+            });
+
+            // Robots Move
+            ROBOTS.forEach(r => {
+                r.x += r.vx; r.y += r.vy;
+                if (r.x < 0 || r.x > WIDTH) r.vx *= -1;
+                if (r.y < 0 || r.y > HEIGHT) r.vy *= -1;
+            });
+
+
+            // DRAW
+            ctx.fillStyle = '#1e1b4b'; // Cytoplasm Blue
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+            // Cell Membrane (City Wall)
+            ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 20;
+            ctx.beginPath(); ctx.ellipse(WIDTH / 2, HEIGHT / 2, WIDTH * 0.45, HEIGHT * 0.45, 0, 0, Math.PI * 2); ctx.stroke();
+
+            // Trash
+            ctx.fillStyle = '#4b5563';
+            TRASH.forEach(t => {
+                ctx.beginPath(); ctx.rect(t.x, t.y, 10, 10); ctx.fill();
+            });
+
+            // Factories
+            FACTORIES.forEach(f => {
+                // Pulse effect
+                if (f.pulse && f.pulse > 1) {
+                    f.pulse -= 0.05;
+                } else f.pulse = 1;
+
+                const r = f.r * f.pulse;
+
+                ctx.fillStyle = f.color;
+                ctx.shadowBlur = 20; ctx.shadowColor = f.color;
+                ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, Math.PI * 2); ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Label
+                ctx.fillStyle = '#fff'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
+                ctx.fillText(f.type.toUpperCase(), f.x, f.y);
+            });
+
+            // Trucks
+            TRUCKS.forEach(t => {
+                ctx.fillStyle = t.color;
+                ctx.beginPath(); ctx.arc(t.x, t.y, t.size, 0, Math.PI * 2); ctx.fill();
+            });
+
+            // Robots
+            ROBOTS.forEach(r => {
+                ctx.fillStyle = '#60a5fa';
+                ctx.beginPath(); ctx.arc(r.x, r.y, 5, 0, Math.PI * 2); ctx.fill();
+            });
+
+            requestAnimationFrame(loop);
+        }
+
+        resize();
+        loop();
+
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | A* Pathfinder</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Orbitron', sans-serif;
+            color: white;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            padding: 20px;
+        }
+
+        .hud {
+            pointer-events: auto;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #333;
+            padding: 15px;
+            border-radius: 8px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .mode-btn {
+            padding: 10px 20px;
+            border: 1px solid #555;
+            background: #222;
+            color: #aaa;
+            cursor: pointer;
+            font-family: 'Orbitron';
+            text-transform: uppercase;
+        }
+
+        .mode-btn.active {
+            border-color: #22c55e;
+            color: #22c55e;
+            background: rgba(34, 197, 94, 0.1);
+        }
+
+        .stat-box {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .val {
+            font-size: 18px;
+            color: #fff;
+        }
+
+        #console {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 250px;
+            height: 300px;
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid #22c55e;
+            color: #22c55e;
+            font-family: monospace;
+            font-size: 10px;
+            padding: 10px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div id="ui-layer">
+        <div id="console">
+            > SYSTEM READY.<br>
+            > A* HEURISTIC LOADED.<br>
+            > GRID INITIALIZED.
+        </div>
+
+        <div class="hud">
+            <div>
+                <div class="stat-box">ALGORITHM</div>
+                <div style="display:flex; gap:5px;">
+                    <button class="mode-btn" onclick="setMode('BFS')" id="btn-bfs">BFS</button>
+                    <button class="mode-btn active" onclick="setMode('ASTAR')" id="btn-astar">A* (Star)</button>
+                    <button class="mode-btn" onclick="setMode('DIJKSTRA')" id="btn-dij">Dijkstra</button>
+                </div>
+            </div>
+
+            <div>
+                <div class="stat-box">NODES VISITED</div>
+                <div class="val" id="val-vis">0</div>
+            </div>
+
+            <div>
+                <div class="stat-box">PATH LENGTH</div>
+                <div class="val" id="val-len">0</div>
+            </div>
+
+            <button class="mode-btn" style="background:#ef4444; color:#fff; border:none;" onclick="resetGrid()">RESET
+                MAP</button>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * A* PATHFINDING VISUALIZER
+         * Demonstrates graph traversal algorithms.
+         */
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const con = document.getElementById('console');
+
+        const CELL = 30; // px
+        let ROWS, COLS;
+
+        let MODE = 'ASTAR';
+
+        // Grid State
+        // 0: Empty, 1: Wall, 2: Start, 3: End
+        let GRID = [];
+        let START = { r: 5, c: 5 };
+        let END = { r: 15, c: 25 };
+
+        // Algorithm State
+        let OPEN_SET = []; // {r, c, f, g, parent}
+        let CLOSED_SET = []; // string coords "r,c"
+        let PATH = [];
+        let AGENT = null; // {r,c} for animation
+        let RUNNING = false;
+
+        function init() {
+            resize();
+            resetGrid();
+            window.addEventListener('resize', resize);
+
+            // Draw Walls Interaction
+            let drawing = false;
+            canvas.addEventListener('mousedown', e => {
+                if (RUNNING) return;
+                drawing = true;
+                paint(e);
+            });
+            window.addEventListener('mouseup', () => drawing = false);
+            window.addEventListener('mousemove', e => { if (drawing) paint(e); });
+
+            loop();
+        }
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            ROWS = Math.floor(canvas.height / CELL);
+            COLS = Math.floor(canvas.width / CELL);
+        }
+
+        window.resetGrid = () => {
+            GRID = [];
+            for (let r = 0; r < ROWS; r++) {
+                let row = [];
+                for (let c = 0; c < COLS; c++) {
+                    // Random obstacles
+                    row.push(Math.random() < 0.2 ? 1 : 0);
+                }
+                GRID.push(row);
+            }
+            // Clear start/end
+            GRID[START.r][START.c] = 2;
+            GRID[END.r][END.c] = 3;
+
+            OPEN_SET = [];
+            CLOSED_SET = [];
+            PATH = [];
+            RUNNING = false;
+
+            log("Map Reset.");
+            log("Click to draw walls. Select Alg to Start.");
+        };
+
+        window.setMode = (m) => {
+            MODE = m;
+            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+            if (m === 'BFS') document.getElementById('btn-bfs').classList.add('active');
+            if (m === 'ASTAR') document.getElementById('btn-astar').classList.add('active');
+            if (m === 'DIJKSTRA') document.getElementById('btn-dij').classList.add('active');
+
+            startSearch();
+        };
+
+        function paint(e) {
+            const r = Math.floor(e.clientY / CELL);
+            const c = Math.floor(e.clientX / CELL);
+            if (r >= 0 && r < ROWS && c >= 0 && c < COLS) {
+                if (GRID[r][c] !== 2 && GRID[r][c] !== 3) {
+                    GRID[r][c] = 1;
+                }
+            }
+        }
+
+        function startSearch() {
+            if (RUNNING) return;
+            RUNNING = true;
+            OPEN_SET = [];
+            CLOSED_SET = [];
+            PATH = [];
+
+            // Push Start
+            OPEN_SET.push({
+                r: START.r, c: START.c,
+                f: 0, g: 0, parent: null
+            });
+
+            log(`Starting ${MODE}...`);
+        }
+
+        function log(m) {
+            con.innerHTML += `> ${m}<br>`;
+            con.scrollTop = con.scrollHeight;
+        }
+
+        // --- LOOP ---
+        function loop() {
+            updateAlg();
+            render();
+            requestAnimationFrame(loop);
+        }
+
+        function updateAlg() {
+            if (!RUNNING) return;
+            if (OPEN_SET.length === 0) {
+                RUNNING = false;
+                log("NO PATH FOUND.");
+                return;
+            }
+
+            // 1. Pick Best from OpenSet
+            let currentIdx = 0;
+            if (MODE === 'ASTAR' || MODE === 'DIJKSTRA') {
+                // Find lowest F
+                for (let i = 1; i < OPEN_SET.length; i++) {
+                    if (OPEN_SET[i].f < OPEN_SET[currentIdx].f) currentIdx = i;
+                }
+            } else {
+                // BFS: Standard Queue (FIFO). 
+                // Index 0.
+                currentIdx = 0;
+            }
+
+            let current = OPEN_SET[currentIdx];
+
+            // 2. Check Win
+            if (current.r === END.r && current.c === END.c) {
+                reconstructPath(current);
+                RUNNING = false;
+                log("TARGET REACHED.");
+                return;
+            }
+
+            // 3. Move to Closed
+            OPEN_SET.splice(currentIdx, 1);
+            CLOSED_SET.push(`${current.r},${current.c}`);
+
+            // 4. Expand Neighbors
+            const neighbors = getNeighbors(current.r, current.c);
+
+            neighbors.forEach(n => {
+                if (CLOSED_SET.includes(`${n.r},${n.c}`)) return; // Already done
+                if (GRID[n.r][n.c] === 1) return; // Wall
+
+                // G Cost = dist from start
+                const tempG = current.g + 1;
+
+                // Is in Open?
+                let neighborNode = OPEN_SET.find(node => node.r === n.r && node.c === n.c);
+                if (neighborNode) {
+                    if (tempG < neighborNode.g) {
+                        neighborNode.g = tempG;
+                        neighborNode.f = neighborNode.g + heu(neighborNode);
+                        neighborNode.parent = current;
+                    }
+                } else {
+                    // New node
+                    let h = heu(n);
+                    if (MODE === 'DIJKSTRA' || MODE === 'BFS') h = 0;
+
+                    OPEN_SET.push({
+                        r: n.r, c: n.c,
+                        g: tempG,
+                        f: tempG + h,
+                        parent: current
+                    });
+                }
+            });
+
+            // Stats
+            document.getElementById('val-vis').innerText = CLOSED_SET.length;
+        }
+
+        function heu(n) {
+            // Manhattan dist
+            return Math.abs(n.r - END.r) + Math.abs(n.c - END.c);
+        }
+
+        function getNeighbors(r, c) {
+            const res = [];
+            if (r > 0) res.push({ r: r - 1, c });
+            if (r < ROWS - 1) res.push({ r: r + 1, c });
+            if (c > 0) res.push({ r, c: c - 1 });
+            if (c < COLS - 1) res.push({ r, c: c + 1 });
+            return res;
+        }
+
+        function reconstructPath(curr) {
+            let temp = curr;
+            while (temp) {
+                PATH.push(temp);
+                temp = temp.parent;
+            }
+            document.getElementById('val-len').innerText = PATH.length;
+        }
+
+        // --- RENDER ---
+        function render() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Grid
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const x = c * CELL;
+                    const y = r * CELL;
+
+                    let type = GRID[r][c];
+
+                    // Base Colors
+                    if (type === 1) { // Wall
+                        ctx.fillStyle = '#333';
+                        ctx.fillRect(x, y, CELL - 1, CELL - 1);
+                    }
+                    else if (type === 2) { // Start
+                        ctx.fillStyle = '#22c55e';
+                        ctx.fillRect(x, y, CELL - 1, CELL - 1);
+                    }
+                    else if (type === 3) { // End
+                        ctx.fillStyle = '#ef4444';
+                        ctx.fillRect(x, y, CELL - 1, CELL - 1);
+                    } else {
+                        // Empty
+                        // Debug: Closed Set
+                        ctx.strokeStyle = '#222';
+                        ctx.strokeRect(x, y, CELL, CELL);
+                    }
+                }
+            }
+
+            // Draw Closed Set (Red tint)
+            ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
+            CLOSED_SET.forEach(s => {
+                const [r, c] = s.split(',').map(Number);
+                ctx.fillRect(c * CELL, r * CELL, CELL - 1, CELL - 1);
+            });
+
+            // Draw Open Set (Green tint)
+            ctx.fillStyle = 'rgba(34, 197, 94, 0.4)';
+            OPEN_SET.forEach(n => {
+                ctx.fillRect(n.c * CELL, n.r * CELL, CELL - 1, CELL - 1);
+            });
+
+            // Draw Path (Bright Line)
+            if (PATH.length > 0) {
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 4;
+                ctx.shadowBlur = 10; ctx.shadowColor = '#fff';
+                ctx.beginPath();
+                PATH.forEach((p, i) => {
+                    const x = p.c * CELL + CELL / 2;
+                    const y = p.r * CELL + CELL / 2;
+                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                });
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

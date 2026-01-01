@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Color Magic</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #fff;
+            font-family: 'Fredoka', sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .beakers {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 20px;
+        }
+
+        .beaker-btn {
+            width: 80px;
+            height: 100px;
+            background: rgba(255, 255, 255, 0.8);
+            border: 2px solid #ccc;
+            border-bottom-left-radius: 20px;
+            border-bottom-right-radius: 20px;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.2s;
+        }
+
+        .beaker-btn:active {
+            transform: translateY(10px) rotate(15deg);
+        }
+
+        .liquid {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 70%;
+        }
+
+        .reset-btn {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: #333;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="beakers">
+        <div class="beaker-btn" onmousedown="startPour('red')" onmouseup="stopPour()" onmouseleave="stopPour()">
+            <div class="liquid bg-red-500"></div>
+        </div>
+        <div class="beaker-btn" onmousedown="startPour('yellow')" onmouseup="stopPour()" onmouseleave="stopPour()">
+            <div class="liquid bg-yellow-400"></div>
+        </div>
+        <div class="beaker-btn" onmousedown="startPour('blue')" onmouseup="stopPour()" onmouseleave="stopPour()">
+            <div class="liquid bg-blue-500"></div>
+        </div>
+    </div>
+
+    <div class="reset-btn" onclick="flush()">Running Water / Flush 🚽</div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let width, height;
+
+        let PARTICLES = [];
+        let POURING = null;
+
+        // Color Map
+        const COLORS = {
+            'red': { r: 239, g: 68, b: 68 },
+            'blue': { r: 59, g: 130, b: 246 },
+            'yellow': { r: 250, g: 204, b: 21 }
+        };
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            // Bowl dims
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        window.startPour = (c) => POURING = c;
+        window.stopPour = () => POURING = null;
+        window.flush = () => PARTICLES = [];
+
+        class Drop {
+            constructor(x, y, color) {
+                this.x = x; this.y = y;
+                this.vx = (Math.random() - 0.5) * 2;
+                this.vy = Math.random() * 5 + 2;
+                this.color = { ...COLORS[color] };
+                this.r = 8;
+            }
+            draw() {
+                ctx.fillStyle = `rgb(${this.color.r},${this.color.g},${this.color.b})`;
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2); ctx.fill();
+            }
+            update() {
+                this.vy += 0.2; // Gravity
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Bowl Collision
+                const by = height - 100;
+                if (this.y > by) {
+                    this.y = by;
+                    this.vy = 0;
+                    this.vx *= 0.9; // Friction
+                    // Spread
+                    this.x += (Math.random() - 0.5) * 2;
+                }
+
+                // Walls
+                if (this.x < width / 2 - 200 || this.x > width / 2 + 200) {
+                    this.vx *= -1;
+                    this.x = Math.max(width / 2 - 200, Math.min(width / 2 + 200, this.x));
+                }
+            }
+        }
+
+        function mixColors(p1, p2) {
+            // Simple average mix
+            p1.color.r = (p1.color.r + p2.color.r) / 2;
+            p1.color.g = (p1.color.g + p2.color.g) / 2;
+            p1.color.b = (p1.color.b + p2.color.b) / 2;
+            p2.color = { ...p1.color }; // Share
+        }
+
+        function loop() {
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw Bowl Back
+            const cx = width / 2;
+            const by = height - 100;
+            ctx.fillStyle = '#f1f5f9';
+            ctx.beginPath();
+            ctx.arc(cx, by, 250, 0, Math.PI, false);
+            ctx.fill();
+
+            // Pouring
+            if (POURING) {
+                for (let i = 0; i < 3; i++) {
+                    PARTICLES.push(new Drop(cx + (Math.random() - 0.5) * 20, 100, POURING));
+                }
+            }
+
+            // Update Particles
+            for (let i = 0; i < PARTICLES.length; i++) {
+                const p = PARTICLES[i];
+                p.update();
+                p.draw();
+
+                // Mix with neighbors (Simple Optimization: Only check a few)
+                if (Math.random() > 0.95) {
+                    // Pick a random other particle
+                    const other = PARTICLES[Math.floor(Math.random() * PARTICLES.length)];
+                    const dx = p.x - other.x;
+                    const dy = p.y - other.y;
+                    if (Math.sqrt(dx * dx + dy * dy) < 20) {
+                        mixColors(p, other);
+                    }
+                }
+            }
+
+            // Draw Bowl Front (Glass)
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 10;
+            ctx.beginPath();
+            ctx.arc(cx, by, 250, 0, Math.PI, false);
+            ctx.stroke();
+            ctx.fill();
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+
+    </script>
+</body>
+
+</html>

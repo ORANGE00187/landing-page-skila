@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skila.ai | Linear Algebra Lab</title>
+    <!-- FONTS -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0F172A;
+            /* Deep Space */
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+            color: white;
+        }
+
+        #sim-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* UI LAYER */
+        .ui-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        /* MATRIX CONSOLE */
+        .matrix-panel {
+            position: absolute;
+            top: 40px;
+            left: 40px;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            border-radius: 12px;
+            padding: 24px;
+            pointer-events: auto;
+            box-shadow: 0 0 40px rgba(34, 211, 238, 0.1);
+        }
+
+        .matrix-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 24px;
+            font-weight: 700;
+            position: relative;
+            padding: 0 16px;
+        }
+
+        /* Matrix Brackets */
+        .matrix-grid::before,
+        .matrix-grid::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 12px;
+            border: 2px solid rgba(255, 255, 255, 0.4);
+        }
+
+        .matrix-grid::before {
+            left: 0;
+            border-right: none;
+            border-radius: 8px 0 0 8px;
+        }
+
+        .matrix-grid::after {
+            right: 0;
+            border-left: none;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .mat-val {
+            width: 80px;
+            height: 60px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #22D3EE;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .mat-val.green {
+            color: #34D399;
+        }
+
+        /* i-hat x */
+        .mat-val.pink {
+            color: #F472B6;
+        }
+
+        /* j-hat x? No, colors usually col vectors */
+
+        /* Highlight specific matrix elements corresponding to vectors */
+        /* [ a c ] x
+           [ b d ] y */
+        /* i-hat is (1,0) -> transforms to (a, b) */
+        /* j-hat is (0,1) -> transforms to (c, d) */
+
+        /* So Column 1 is Green (i), Column 2 is Pink (j) */
+
+        /* CONTROLS */
+        .control-bar {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 12px;
+            pointer-events: auto;
+        }
+
+        .btn-fx {
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: rgba(226, 232, 240, 0.8);
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-fx:hover {
+            background: rgba(34, 211, 238, 0.2);
+            border-color: rgba(34, 211, 238, 0.6);
+            color: white;
+            box-shadow: 0 0 20px rgba(34, 211, 238, 0.2);
+        }
+
+        /* DET HUD */
+        .det-hud {
+            position: absolute;
+            top: 40px;
+            right: 40px;
+            text-align: right;
+            pointer-events: none;
+        }
+
+        .det-val {
+            font-size: 48px;
+            font-weight: 800;
+            font-family: 'JetBrains Mono';
+            color: white;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+        }
+
+        .det-label {
+            font-size: 12px;
+            color: #94A3B8;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="sim-canvas"></canvas>
+
+    <div class="ui-layer">
+
+        <!-- Matrix -->
+        <div class="matrix-panel">
+            <div class="text-xs text-slate-400 font-bold mb-4 uppercase tracking-widest text-center">Transformation
+                Matrix</div>
+            <div class="matrix-grid">
+                <!-- Col 1 (i) -->
+                <div class="mat-val green" id="m00">1.0</div> <!-- a (ix) -->
+                <div class="mat-val pink" id="m01">0.0</div> <!-- c (jx) -->
+
+                <div class="mat-val green" id="m10">0.0</div> <!-- b (iy) -->
+                <div class="mat-val pink" id="m11">1.0</div> <!-- d (jy) -->
+            </div>
+            <div class="mt-4 flex justify-between text-[10px] text-slate-500 font-mono">
+                <span style="color:#34D399; width: 50%; text-align: center;">i-hat</span>
+                <span style="color:#F472B6; width: 50%; text-align: center;">j-hat</span>
+            </div>
+        </div>
+
+        <!-- Determinant -->
+        <div class="det-hud">
+            <div class="det-val" id="det-display">1.00</div>
+            <div class="det-label">Determinant (Area)</div>
+        </div>
+
+        <!-- Presets -->
+        <div class="control-bar">
+            <button class="btn-fx" onclick="setPreset('identity')">Identity</button>
+            <button class="btn-fx" onclick="setPreset('shear')">Shear X</button>
+            <button class="btn-fx" onclick="setPreset('rotate')">Rotate 45°</button>
+            <button class="btn-fx" onclick="setPreset('scale')">Scale 2x</button>
+            <button class="btn-fx" onclick="setPreset('singular')">Singularity</button>
+        </div>
+
+    </div>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        /**
+         * SKILA.ai - Linear Algebra Transformation Engine
+         * - Matrix Transformation of Transformed Grid (x' = Ax)
+         * - Lerp Animation
+         * - Draggable Basis Vectors
+         */
+
+        const canvas = document.getElementById('sim-canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height, cx, cy;
+
+        // --- STATE ---
+        // Basis Vectors (Target)
+        const TARGET = {
+            ix: 1, iy: 0,
+            jx: 0, jy: 1
+        };
+        // Basis Vectors (Current - Animated)
+        const CURRENT = {
+            ix: 1, iy: 0,
+            jx: 0, jy: 1
+        };
+
+        let dragging = null; // 'i' or 'j'
+        let time = 0;
+
+        // --- GRID CONFIG ---
+        const UNIT = 100; // Pixels per unit
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            cx = width / 2; cy = height / 2;
+        }
+
+        function lerp(a, b, t) { return a + (b - a) * t; }
+
+        function transform(x, y) {
+            // Apply Matrix to vector (x, y)
+            // [ ix jx ] [ x ]   [ x*ix + y*jx ]
+            // [ iy jy ] [ y ] = [ x*iy + y*jy ]
+
+            return {
+                x: x * CURRENT.ix + y * CURRENT.jx,
+                y: x * CURRENT.iy + y * CURRENT.jy
+            };
+        }
+
+        // --- RENDER ---
+        function drawGrid() {
+            // 1. Ghost Grid (Original Cartesian)
+            // Just faint dashed lines
+            /*
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+            ctx.setLineDash([5, 5]);
+            for(let x=-10; x<=10; x++) { ... }
+            */
+            // Skipping ghost grid for cleaner look, sticking to "Tron"
+
+            // 2. Transformed Grid
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(34, 211, 238, 0.3)'; // Cyan
+
+            const range = 20; // -10 to 10
+
+            // Draw Vertical Lines (transformed x-lines)
+            // A vertical line is set of points where x = constant, y varies
+            for (let i = -range; i <= range; i++) {
+                ctx.beginPath();
+                // Start of line (large negative y)
+                const start = transform(i, -range);
+                const p1 = toScreen(start.x, start.y);
+                ctx.moveTo(p1.x, p1.y);
+
+                // End of line
+                const end = transform(i, range);
+                const p2 = toScreen(end.x, end.y);
+                ctx.lineTo(p2.x, p2.y);
+
+                ctx.stroke();
+            }
+
+            // Draw Horizontal Lines (transformed y-lines)
+            for (let i = -range; i <= range; i++) {
+                ctx.beginPath();
+                const start = transform(-range, i);
+                const p1 = toScreen(start.x, start.y);
+                ctx.moveTo(p1.x, p1.y);
+
+                const end = transform(range, i);
+                const p2 = toScreen(end.x, end.y);
+                ctx.lineTo(p2.x, p2.y);
+
+                ctx.stroke();
+            }
+
+            // 3. Axes (Thicker)
+            ctx.lineWidth = 2;
+            const origin = toScreen(0, 0);
+
+            // X Axis (Transformed) -> Line where y=0, x varies
+            ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+            ctx.beginPath();
+            const xAxStart = toScreen(transform(-range, 0).x, transform(-range, 0).y);
+            const xAxEnd = toScreen(transform(range, 0).x, transform(range, 0).y);
+            ctx.moveTo(xAxStart.x, xAxStart.y); ctx.lineTo(xAxEnd.x, xAxEnd.y); ctx.stroke();
+
+            // Y Axis
+            const yAxStart = toScreen(transform(0, -range).x, transform(0, -range).y);
+            const yAxEnd = toScreen(transform(0, range).x, transform(0, range).y);
+            ctx.moveTo(yAxStart.x, yAxStart.y); ctx.lineTo(yAxEnd.x, yAxEnd.y); ctx.stroke();
+
+            // 4. Object "F"
+            // Let's define shape points in grid coords
+            const fPoints = [
+                { x: 1, y: 1 }, { x: 1, y: 3 }, // Stem
+                { x: 1, y: 3 }, { x: 2.5, y: 3 }, // Top bar
+                { x: 1, y: 2 }, { x: 2, y: 2 }    // Mid bar
+            ];
+
+            ctx.lineWidth = 6;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = '#FCD34D'; // Amber
+            ctx.shadowColor = '#FCD34D'; ctx.shadowBlur = 15;
+
+            ctx.beginPath();
+            // Draw separate segments
+            // Better: Stroke the shape logic
+            // p1->p2
+            for (let k = 0; k < fPoints.length; k += 2) {
+                const s = transform(fPoints[k].x, fPoints[k].y);
+                const e = transform(fPoints[k + 1].x, fPoints[k + 1].y);
+                const sp = toScreen(s.x, s.y);
+                const ep = toScreen(e.x, e.y);
+                ctx.moveTo(sp.x, sp.y); ctx.lineTo(ep.x, ep.y);
+            }
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // 5. Basis Vectors (Interactive)
+            // i-hat
+            drawVector(CURRENT.ix, CURRENT.iy, '#34D399'); // Green
+            // j-hat
+            drawVector(CURRENT.jx, CURRENT.jy, '#F472B6'); // Pink
+        }
+
+        function drawVector(vx, vy, color) {
+            const head = toScreen(vx, vy);
+            const o = toScreen(0, 0);
+
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = color;
+            ctx.fillStyle = color;
+
+            ctx.beginPath();
+            ctx.moveTo(o.x, o.y);
+            ctx.lineTo(head.x, head.y);
+            ctx.stroke();
+
+            // Arrowhead
+            ctx.beginPath();
+            ctx.arc(head.x, head.y, 8, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Glow
+            ctx.shadowColor = color; ctx.shadowBlur = 10;
+            ctx.stroke(); ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+
+        function toScreen(x, y) {
+            // x, y are in Grid Units (post-transform math space)
+            // We map them to pixels:
+            // ScreenX = cx + x * UNIT
+            // ScreenY = cy - y * UNIT (Y flip)
+            return {
+                x: cx + x * UNIT,
+                y: cy - y * UNIT
+            };
+        }
+
+        function fromScreen(sx, sy) {
+            return {
+                x: (sx - cx) / UNIT,
+                y: (cy - sy) / UNIT
+            };
+        }
+
+        // --- LOOP ---
+        function loop() {
+            // Smooth Animate towards Target
+            const speed = 0.2;
+            CURRENT.ix = lerp(CURRENT.ix, TARGET.ix, speed);
+            CURRENT.iy = lerp(CURRENT.iy, TARGET.iy, speed);
+            CURRENT.jx = lerp(CURRENT.jx, TARGET.jx, speed);
+            CURRENT.jy = lerp(CURRENT.jy, TARGET.jy, speed);
+
+            // Update UI
+            document.getElementById('m00').innerText = CURRENT.ix.toFixed(2);
+            document.getElementById('m10').innerText = CURRENT.iy.toFixed(2);
+            document.getElementById('m01').innerText = CURRENT.jx.toFixed(2);
+            document.getElementById('m11').innerText = CURRENT.jy.toFixed(2);
+
+            const det = (CURRENT.ix * CURRENT.jy) - (CURRENT.jx * CURRENT.iy);
+            const dEl = document.getElementById('det-display');
+            dEl.innerText = det.toFixed(2);
+            if (det < 0) dEl.style.color = '#F43F5E';
+            else dEl.style.color = 'white';
+
+            // Clear
+            ctx.fillStyle = '#0F172A';
+            ctx.fillRect(0, 0, width, height);
+
+            drawGrid();
+
+            requestAnimationFrame(loop);
+        }
+
+        // --- INTERACTION ---
+        function getDist(p1, p2) { return Math.hypot(p1.x - p2.x, p1.y - p2.y); }
+
+        canvas.addEventListener('mousedown', e => {
+            const mouse = { x: e.clientX, y: e.clientY };
+            // Check distances to vector heads
+            const iHead = toScreen(CURRENT.ix, CURRENT.iy);
+            const jHead = toScreen(CURRENT.jx, CURRENT.jy);
+
+            if (getDist(mouse, iHead) < 20) dragging = 'i';
+            else if (getDist(mouse, jHead) < 20) dragging = 'j';
+        });
+
+        window.addEventListener('mousemove', e => {
+            if (dragging) {
+                const math = fromScreen(e.clientX, e.clientY);
+                if (dragging === 'i') {
+                    TARGET.ix = math.x; TARGET.iy = math.y;
+                    // Snap for clean numbers
+                    if (Math.abs(TARGET.ix - Math.round(TARGET.ix)) < 0.1) TARGET.ix = Math.round(TARGET.ix);
+                    if (Math.abs(TARGET.iy - Math.round(TARGET.iy)) < 0.1) TARGET.iy = Math.round(TARGET.iy);
+                } else {
+                    TARGET.jx = math.x; TARGET.jy = math.y;
+                    if (Math.abs(TARGET.jx - Math.round(TARGET.jx)) < 0.1) TARGET.jx = Math.round(TARGET.jx);
+                    if (Math.abs(TARGET.jy - Math.round(TARGET.jy)) < 0.1) TARGET.jy = Math.round(TARGET.jy);
+                }
+            }
+        });
+        window.addEventListener('mouseup', () => dragging = null);
+        window.addEventListener('resize', resize);
+
+        window.setPreset = (name) => {
+            if (name === 'identity') {
+                TARGET.ix = 1; TARGET.iy = 0;
+                TARGET.jx = 0; TARGET.jy = 1;
+            }
+            if (name === 'shear') {
+                TARGET.ix = 1; TARGET.iy = 0;
+                TARGET.jx = 1; TARGET.jy = 1; // Shear right
+            }
+            if (name === 'rotate') {
+                const angle = Math.PI / 4;
+                TARGET.ix = Math.cos(angle); TARGET.iy = Math.sin(angle);
+                TARGET.jx = -Math.sin(angle); TARGET.jy = Math.cos(angle);
+            }
+            if (name === 'scale') {
+                TARGET.ix = 2; TARGET.iy = 0;
+                TARGET.jx = 0; TARGET.jy = 2;
+            }
+            if (name === 'singular') {
+                TARGET.ix = 1; TARGET.iy = 0.5;
+                TARGET.jx = 2; TARGET.jy = 1; // Collinear
+            }
+        };
+
+        // Init
+        resize();
+        loop();
+
+    </script>
+</body>
+
+</html>

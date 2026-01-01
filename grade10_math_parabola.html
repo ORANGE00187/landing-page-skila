@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Parabolic Signal Reflector</title>
+    <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #02040a;
+            font-family: 'Exo 2', sans-serif;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            p-6;
+        }
+
+        .header {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        h1 {
+            font-size: 32px;
+            color: #60a5fa;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            text-shadow: 0 0 20px #2563eb;
+        }
+
+        .eq-display {
+            font-size: 24px;
+            color: #fff;
+            background: rgba(30, 58, 138, 0.5);
+            padding: 10px 30px;
+            border-radius: 20px;
+            display: inline-block;
+            margin-top: 10px;
+            font-family: monospace;
+            border: 1px solid #3b82f6;
+        }
+
+        .controls {
+            pointer-events: auto;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid #1e293b;
+            width: 400px;
+            padding: 20px;
+            margin: 0 auto 30px auto;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+        }
+
+        .slider-grp {
+            margin-bottom: 30px;
+        }
+
+        .slider-head {
+            display: flex;
+            justify-content: space-between;
+            color: #94a3b8;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .slider-val {
+            color: #60a5fa;
+            font-weight: bold;
+        }
+
+        input[type=range] {
+            width: 100%;
+            accent-color: #3b82f6;
+        }
+
+        #status-msg {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 60px;
+            font-weight: 900;
+            color: #fff;
+            text-shadow: 0 0 30px #fff;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+        .target-readout {
+            position: absolute;
+            right: 40px;
+            top: 50%;
+            transform: translateY(-50%);
+            text-align: right;
+        }
+
+        .t-label {
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .t-val {
+            font-size: 24px;
+            color: #f472b6;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div id="ui-layer">
+        <div class="header">
+            <h1>Deep Space Array</h1>
+            <div class="eq-display" id="equation">y = 0.04x² + 0.0x + 200</div>
+        </div>
+
+        <div id="status-msg">SIGNAL LOCKED</div>
+
+        <div class="target-readout">
+            <div class="t-label">TARGET FOCAL Y</div>
+            <div class="t-val" id="target-y">350.0</div>
+            <div class="t-label" style="margin-top:20px">CURRENT ERROR</div>
+            <div class="t-val" id="curr-err" style="color:red">--</div>
+        </div>
+
+        <div class="controls">
+            <div class="slider-grp">
+                <div class="slider-head"><span>CURVATURE (a)</span><span class="slider-val" id="val-a">0.04</span></div>
+                <input type="range" id="inp-a" min="0.01" max="0.10" step="0.001" value="0.04">
+            </div>
+
+            <div class="slider-grp">
+                <div class="slider-head"><span>AXIS SHIFT (b)</span><span class="slider-val" id="val-b">0.0</span></div>
+                <input type="range" id="inp-b" min="-5" max="5" step="0.1" value="0.0">
+            </div>
+
+            <div class="text-xs text-center text-slate-500">
+                ADJUST (a) TO FOCUS RAYS ON THE PINK SENSOR
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * PARABOLIC OPTICS SIMULATION
+         * Ray Tracing on a Quadratic Surface.
+         * Math: y = ax^2 + bx + c
+         * Tech: Calculate Derivative dy/dx -> Slope -> Normal vector -> Reflection vector.
+         */
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const eqDisp = document.getElementById('equation');
+        const statusMsg = document.getElementById('status-msg');
+
+        // Params
+        let paramA = 0.04;
+        let paramB = 0.0;
+        let paramC = 400.0; // Fixed vertical height approx
+
+        // Receiver Target
+        let TARGET = { x: 0, y: 300, r: 10 };
+
+        // Rays
+        let RAYS = [];
+        const RAY_COUNT = 20;
+
+        // State
+        let SIGNAL_STRENGTH = 0; // 0 to 1
+
+        let W, H;
+
+        function init() {
+            resize();
+            // Bind inputs
+            document.getElementById('inp-a').addEventListener('input', e => { paramA = parseFloat(e.target.value); updateEquation(); });
+            document.getElementById('inp-b').addEventListener('input', e => { paramB = parseFloat(e.target.value); updateEquation(); });
+
+            // Generate incoming rays (Vertical from Top)
+            for (let i = 0; i < RAY_COUNT; i++) {
+                RAYS.push({
+                    x: 0, // Assigned in loop based on width
+                    y: 0,
+                    active: true
+                });
+            }
+
+            updateEquation();
+            loop();
+        }
+
+        function resize() {
+            W = canvas.width = window.innerWidth;
+            H = canvas.height = window.innerHeight;
+            TARGET.x = W / 2;
+            TARGET.y = H / 2 - 100; // Fixed Target position in screen space
+            document.getElementById('target-y').innerText = TARGET.y.toFixed(0);
+
+            // Adjust C relative to screen bottom
+            paramC = H - 100; // Base of parabola
+        }
+        window.addEventListener('resize', resize);
+
+        function updateEquation() {
+            document.getElementById('val-a').innerText = paramA.toFixed(3);
+            document.getElementById('val-b').innerText = paramB.toFixed(1);
+            eqDisp.innerHTML = `y = ${paramA.toFixed(3)}x² + ${paramB.toFixed(1)}x + offset`;
+        }
+
+        // --- MATH CORE ---
+
+        function getParabolaY(x_screen) {
+            // Screen Coords:
+            // Centered X: x' = x_screen - W/2
+            // Y is usually Up in Math, Down in Canvas.
+            // Let's model Math space then map to Screen.
+            // Math Origin (0,0) at {W/2, H-100}.
+            // Math Y up.
+
+            const mx = (x_screen - W / 2); // -Width/2 to +Width/2
+            const my = paramA * mx * mx + paramB * mx;
+
+            // Screen Y: OriginY - my
+            return (H - 100) - my;
+        }
+
+        function getSlope(x_screen) {
+            // dy/dx = 2ax + b
+            const mx = (x_screen - W / 2);
+            // Derivative in math space
+            const slope = 2 * paramA * mx + paramB;
+            // Since Screen Y is inverted, purely geometric slope needs care.
+            // But 'slope' describes change in y per x.
+            // If Math slope is m, line is y = mx.
+            // In Screen: (Y_inv) = (X).
+            // Visual Slope is -m.
+            return -slope;
+        }
+
+        // --- LOOP ---
+        function loop() {
+            // Logic: Raycasting
+            // Hits parabola?
+            // Parabola goes from -Inf to +Inf.
+            // Incoming Rays are Vertical Down (x = constant).
+            // Hit Point is (ray.x, getParabolaY(ray.x)).
+
+            // Calculate Focal Convergence
+            let totalDistError = 0;
+
+            // Render
+            ctx.fillStyle = '#02040a';
+            ctx.fillRect(0, 0, W, H);
+
+            // Grid Background
+            ctx.strokeStyle = 'rgba(30, 58, 138, 0.2)';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < W; x += 50) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+            for (let y = 0; y < H; y += 50) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+            // Draw Receiver Target
+            ctx.shadowBlur = 20; ctx.shadowColor = '#f472b6';
+            ctx.fillStyle = '#f472b6';
+            ctx.beginPath(); ctx.arc(TARGET.x, TARGET.y, 8, 0, Math.PI * 2); ctx.fill();
+
+            // Sensor Ring
+            ctx.strokeStyle = '#f472b6'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(TARGET.x, TARGET.y, 15 + Math.sin(Date.now() * 0.01) * 5, 0, Math.PI * 2); ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // Draw Parabola Curve
+            ctx.beginPath();
+            ctx.strokeStyle = '#60a5fa';
+            ctx.lineWidth = 4;
+
+            for (let x = 0; x <= W; x += 5) {
+                const y = getParabolaY(x);
+                if (x === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // Draw Rays
+            ctx.lineWidth = 2;
+
+            // Spread rays across screen width (centered)
+            const spread = 600;
+
+            for (let i = 0; i < RAY_COUNT; i++) {
+                // Distributed X
+                const x = (W / 2 - spread / 2) + (spread / RAY_COUNT) * i;
+
+                // 1. Incoming (Sky -> Dish)
+                const hitY = getParabolaY(x);
+
+                // Color gradient
+                ctx.strokeStyle = `rgba(100, 200, 255, 0.5)`;
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, hitY); ctx.stroke();
+
+                // 2. Reflection
+                // Normal Vector at collision
+                // Tangent slope m. Normal slope = -1/m.
+                const m = getSlope(x); // Visual slope
+
+                // Angle of Tangent
+                const angTan = Math.atan(m);
+                // Angle of Normal (perp to tan)
+                const angNorm = angTan + Math.PI / 2;
+
+                // Incoming Vector: Down (0, 1). Angle PI/2.
+                // Reflected Vector R = I - 2(I.N)N.
+                // Or simplified Angle formulation:
+                // Incident Angle = Angle(Ray) - Angle(Normal).
+                // Reflected Angle = Angle(Normal) - Incident Angle = 2*Angle(Normal) - Angle(Ray).
+
+                // Ray is Vertical Down. Angle = PI/2.
+                const angRay = Math.PI / 2;
+                const angRefl = 2 * angNorm - angRay;
+
+                // Raycast Output
+                // Draw long line
+                const len = 2000;
+                const rX = x + Math.cos(angRefl) * len;
+                const rY = hitY + Math.sin(angRefl) * len;
+
+                ctx.strokeStyle = `rgba(255, 255, 100, 0.4)`; // Yellowish reflected
+                ctx.beginPath(); ctx.moveTo(x, hitY); ctx.lineTo(rX, rY); ctx.stroke();
+
+                // CHECK INTERSECTION WITH TARGET
+                // Line point distance
+                // Distance from Target center to Reflection Line
+                // Line: P1(x, hitY), P2(rX, rY). P0(TARGET)
+
+                const dist = pointToLineDist(TARGET.x, TARGET.y, x, hitY, rX, rY);
+                totalDistError += dist;
+
+                // Visual Hit
+                if (dist < 5) {
+                    ctx.fillStyle = '#fff';
+                    ctx.beginPath(); ctx.arc(TARGET.x, TARGET.y, 2, 0, Math.PI * 2); ctx.fill();
+                }
+            }
+
+            // Scoring
+            const avgError = totalDistError / RAY_COUNT;
+            document.getElementById('curr-err').innerText = avgError.toFixed(2);
+            document.getElementById('curr-err').style.color = avgError < 5 ? '#0f0' : '#f00';
+
+            // Focal Point calculation from inputs for comparison:
+            // Standard form: y = a(x-h)^2 + k.
+            // Focal length f = 1 / (4a).
+            // Focus is at (h, k + f).
+            // Screen Y inverted: Focus is (h, k - f).
+
+            if (avgError < 5) {
+                SIGNAL_STRENGTH = Math.min(1, SIGNAL_STRENGTH + 0.05);
+            } else {
+                SIGNAL_STRENGTH = Math.max(0, SIGNAL_STRENGTH - 0.05);
+            }
+
+            // Success Feedback
+            statusMsg.style.opacity = SIGNAL_STRENGTH;
+            if (SIGNAL_STRENGTH > 0.8) {
+                // Glow effect
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.fillStyle = `rgba(0, 255, 255, 0.2)`;
+                ctx.beginPath(); ctx.arc(TARGET.x, TARGET.y, 100 * Math.random(), 0, Math.PI * 2); ctx.fill();
+                ctx.globalCompositeOperation = 'source-over';
+            }
+
+            requestAnimationFrame(loop);
+        }
+
+        function pointToLineDist(x0, y0, x1, y1, x2, y2) {
+            const num = Math.abs((y2 - y1) * x0 - (x2 - x1) * y0 + x2 * y1 - y2 * x1);
+            const den = Math.sqrt(Math.pow(y2 - y1, 2) + Math.pow(x2 - x1, 2));
+            return num / den;
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

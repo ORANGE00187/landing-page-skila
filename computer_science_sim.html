@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Algorithmic Logic Lab | Solarpunk</title>
+    <style>
+        /* --- SOLARPUNK LAB THEME --- */
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #F8FAFC;
+            /* Slate-50 */
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            cursor: crosshair;
+        }
+
+        #lab-overlay {
+            position: absolute;
+            top: 2rem;
+            left: 2rem;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        h1 {
+            color: #1E293B;
+            /* Slate-800 */
+            font-weight: 700;
+            font-size: 1.5rem;
+            margin: 0 0 0.5rem 0;
+            letter-spacing: -0.02em;
+        }
+
+        .tag {
+            display: inline-block;
+            background: rgba(59, 130, 246, 0.1);
+            color: #3B82F6;
+            padding: 4px 12px;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        #stats {
+            position: absolute;
+            bottom: 2rem;
+            left: 2rem;
+            color: #64748B;
+            font-size: 0.9rem;
+            font-family: monospace;
+            z-index: 10;
+        }
+
+        /* Tooltip */
+        #tooltip {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            padding: 8px 16px;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            color: #0F172A;
+            font-weight: 600;
+            font-size: 0.9rem;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s, transform 0.2s;
+            transform: translateY(10px);
+            z-index: 20;
+        }
+
+        #tooltip.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Scanline Overlay */
+        .scanlines {
+            position: fixed;
+            inset: 0;
+            background: linear-gradient(to bottom, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0) 50%, rgba(0, 0, 0, 0.02) 50%, rgba(0, 0, 0, 0.02));
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 5;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="lab-overlay">
+        <div class="tag">Simulation Active</div>
+        <h1>Dynamic Binary Search Tree</h1>
+        <p style="color: #64748B; font-size: 0.9rem; margin: 0;">Data Packet Flow & Logic Gates</p>
+    </div>
+
+    <div id="stats">
+        NODES: <span id="node-count">0</span> | PACKETS: <span id="packet-count">0</span>
+    </div>
+
+    <div id="tooltip">Value: <span id="tt-val">0</span></div>
+
+    <div class="scanlines"></div>
+    <canvas id="sim"></canvas>
+
+    <script>
+        const canvas = document.getElementById('sim');
+        const ctx = canvas.getContext('2d');
+        const nodeCountDisplay = document.getElementById('node-count');
+        const packetCountDisplay = document.getElementById('packet-count');
+        const tooltip = document.getElementById('tooltip');
+        const ttVal = document.getElementById('tt-val');
+
+        let width, height;
+        let mouseX = 0, mouseY = 0;
+        let packetCounter = 0;
+        let targetX = 0, targetY = 0; // For Parallax
+        let sceneRotation = { x: 0, y: 0 }; // Parallax Offset
+
+        // Configuration
+        const CONFIG = {
+            nodeRadius: 28,
+            levelHeight: 100,
+            primaryColor: '#3B82F6',   // Blue
+            successColor: '#10B981',   // Green
+            processColor: '#F59E0B',   // Orange
+            inactiveColor: '#CBD5E1',  // Slate-300
+            packetSpeed: 6
+        };
+
+        // --- CLASSES ---
+
+        class Node {
+            constructor(value, x, y, level, parent = null) {
+                this.value = value;
+                this.x = x;
+                this.y = y;
+                this.destX = x;
+                this.destY = y;
+                this.level = level;
+                this.parent = parent;
+                this.left = null;
+                this.right = null;
+
+                // Anim state
+                this.scale = 0; // Bloom effect
+                this.targetScale = 1;
+                this.glow = 0;
+                this.isHovered = false;
+
+                // Breath state
+                this.phase = Math.random() * Math.PI * 2;
+            }
+
+            update(t) {
+                // Growth Bloom
+                this.scale += (this.targetScale - this.scale) * 0.1;
+
+                // Hover Glow Logic
+                if (this.isHovered) {
+                    this.glow += (1 - this.glow) * 0.1;
+                } else {
+                    this.glow += (0 - this.glow) * 0.1;
+                }
+
+                // Breathing Motion (Idle)
+                this.offsetY = Math.sin(t * 2 + this.phase) * 3;
+            }
+
+            draw(ctx) {
+                const drawX = this.x + sceneRotation.x * (this.level + 1) * 10;
+                const drawY = this.y + this.offsetY + sceneRotation.y * (this.level + 1) * 10;
+
+                // Draw Connection to Parent
+                if (this.parent) {
+                    const parentX = this.parent.x + sceneRotation.x * (this.parent.level + 1) * 10;
+                    const parentY = this.parent.y + this.parent.offsetY + sceneRotation.y * (this.parent.level + 1) * 10;
+
+                    ctx.beginPath();
+                    ctx.moveTo(parentX, parentY + CONFIG.nodeRadius);
+                    // Bezier for organic cable feel
+                    ctx.quadraticCurveTo(parentX, (parentY + drawY) / 2, drawX, drawY - CONFIG.nodeRadius * this.scale);
+
+                    ctx.strokeStyle = this.glow > 0.1 ? CONFIG.primaryColor : CONFIG.inactiveColor;
+                    ctx.lineWidth = 2 + this.glow * 2;
+                    ctx.lineCap = 'round';
+                    // ctx.setLineDash(this.glow > 0.1 ? [5, 5] : []); // Optional pulsing dash?
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+
+                // Draw Node Sphere
+                if (this.scale < 0.01) return;
+
+                ctx.save();
+                ctx.translate(drawX, drawY);
+                ctx.scale(this.scale, this.scale);
+
+                // 1. Frosted Glass Body
+                ctx.beginPath();
+                ctx.arc(0, 0, CONFIG.nodeRadius, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 255, 255, ${0.7 + this.glow * 0.2})`;
+                ctx.shadowColor = 'rgba(0,0,0,0.1)';
+                ctx.shadowBlur = 10;
+                ctx.shadowOffsetY = 5;
+                ctx.fill();
+
+                // 2. Inner Light / Glow
+                if (this.glow > 0.01) {
+                    ctx.shadowColor = CONFIG.primaryColor;
+                    ctx.shadowBlur = 20 * this.glow;
+                    ctx.fillStyle = `rgba(59, 130, 246, ${0.1 * this.glow})`;
+                    ctx.fill();
+                }
+
+                // 3. Thin Glowing Border
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = this.isHovered ? CONFIG.primaryColor : 'rgba(255,255,255,0.9)';
+                ctx.stroke();
+
+                // 4. Value Text
+                ctx.fillStyle = '#1E293B';
+                ctx.font = 'bold 14px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.value, 0, 1); // Minor visual adjust
+
+                ctx.restore();
+            }
+        }
+
+        class Packet {
+            constructor(value) {
+                this.value = value;
+                this.currentNode = root; // Start at root
+                this.x = width / 2;
+                this.y = -50; // Start off screen
+                this.targetX = root.x;
+                this.targetY = root.y - CONFIG.nodeRadius; // Aim for top of node
+
+                this.state = 'spawning'; // spawning, travelling, comparing, blooming
+                this.speed = CONFIG.packetSpeed;
+                this.history = []; // Trail
+                this.radius = 6;
+                this.color = CONFIG.processColor;
+            }
+
+            update() {
+                // Move towards target
+                const dx = this.targetX - this.x;
+                const dy = this.targetY - this.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < this.speed) {
+                    this.x = this.targetX;
+                    this.y = this.targetY;
+                    this.arrive();
+                } else {
+                    this.x += (dx / dist) * this.speed;
+                    this.y += (dy / dist) * this.speed;
+                }
+
+                // Trail logic
+                this.history.push({ x: this.x, y: this.y });
+                if (this.history.length > 10) this.history.shift();
+            }
+
+            arrive() {
+                if (!this.currentNode) return; // Should not happen
+
+                // Check logic
+                if (this.value === this.currentNode.value) {
+                    // Duplicate, absorb (flash green)
+                    this.state = 'absorbed';
+                    this.currentNode.glow = 1;
+                    removePacket(this);
+                    return;
+                }
+
+                // Decide direction
+                const goLeft = this.value < this.currentNode.value;
+                const nextNode = goLeft ? this.currentNode.left : this.currentNode.right;
+
+                if (nextNode) {
+                    // Node exists, travel to it
+                    this.currentNode = nextNode;
+                    // Apply parallax to target calc
+                    const drawX = nextNode.x + sceneRotation.x * (nextNode.level + 1) * 10;
+                    const drawY = nextNode.y + nextNode.offsetY + sceneRotation.y * (nextNode.level + 1) * 10;
+
+                    this.targetX = nextNode.x; // Logic coords, not visual?
+                    // Actually, for smooth movement we should track logic coords but render with parallax?
+                    // For logic simplicity, packets move in Logic Space, rendered in Parallax Space.
+                    // But wait, the previous frame was logic space too.
+                    // Let's keep packets using logic coords for movement, but we'll add parallax at render time.
+
+                    this.targetX = nextNode.x;
+                    this.targetY = nextNode.y - CONFIG.nodeRadius;
+
+                    // Trigger visual compare pulse on current node
+                    this.currentNode.glow = 0.5;
+                } else {
+                    // Empty spot found! Create new node
+                    insertNode(this.currentNode, this.value, goLeft);
+                    this.state = 'absorbed';
+                    this.color = CONFIG.successColor;
+                    removePacket(this);
+                }
+            }
+
+            draw(ctx) {
+                // Apply parallax to draw positions
+                // We must approximate parallax based on typical depth (level 0) or interpolated depth?
+                // Packets are "floating" above lines. Let's assume they share the depth of the node they are traveling TO.
+                // Simplified: use a fixed depth or interpolate current depth.
+
+                const drawX = this.x + sceneRotation.x * (this.currentNode ? (this.currentNode.level * 10) : 0);
+                const drawY = this.y + sceneRotation.y * (this.currentNode ? (this.currentNode.level * 10) : 0);
+
+                // Draw Trail
+                ctx.beginPath();
+                for (let i = 0; i < this.history.length; i++) {
+                    const p = this.history[i];
+                    // Trail also needs parallax theoretically, but let's skip for perf/simplicity or use offset
+                    ctx.lineTo(p.x + sceneRotation.x * 10, p.y + sceneRotation.y * 10);
+                }
+                ctx.strokeStyle = `rgba(245, 158, 11, 0.4)`;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Draw Particle
+                ctx.beginPath();
+                ctx.arc(drawX, drawY, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.shadowColor = this.color;
+                ctx.shadowBlur = 10;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        // --- GLOBAL STATE ---
+        let root = null;
+        let nodes = [];
+        let packets = [];
+        let idCounter = 0;
+
+        function init() {
+            resize();
+            window.addEventListener('resize', resize);
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('click', onClick);
+
+            // Initial Root
+            root = new Node(50, width / 2, 80, 0);
+            nodes.push(root);
+            updateTreeLayout();
+
+            // Spawn loop
+            setInterval(spawnPacket, 2000);
+
+            loop();
+        }
+
+        function spawnPacket() {
+            if (packets.length > 5) return; // Limit chaos
+            const val = Math.floor(Math.random() * 100);
+            packets.push(new Packet(val));
+            packetCounter++;
+            packetCountDisplay.innerText = packetCounter;
+        }
+
+        function insertNode(parent, value, isLeft) {
+            const newNode = new Node(value, parent.x, parent.y, parent.level + 1, parent); // Start at parent pos for bloom
+            if (isLeft) parent.left = newNode;
+            else parent.right = newNode;
+
+            nodes.push(newNode);
+            updateTreeLayout();
+            nodeCountDisplay.innerText = nodes.length;
+        }
+
+        // Reingold-Tilford inspired layout (Simplified)
+        function updateTreeLayout() {
+            // Simple approach: Width = base_width / 2^level
+            // Depth = level * CONFIG.levelHeight
+
+            const traverse = (node, min, max) => {
+                if (!node) return;
+                node.destX = (min + max) / 2;
+                node.destY = 80 + node.level * CONFIG.levelHeight;
+
+                // Animate to new position
+                // We'll lean on the update loop to lerp x/y to destX/destY
+
+                traverse(node.left, min, node.destX);
+                traverse(node.right, node.destX, max);
+            };
+
+            traverse(root, 0, width);
+        }
+
+        function removePacket(pkt) {
+            const idx = packets.indexOf(pkt);
+            if (idx > -1) packets.splice(idx, 1);
+        }
+
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+            if (root) updateTreeLayout();
+        }
+
+        function onMouseMove(e) {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+
+            // Check Hover
+            let found = false;
+            nodes.forEach(n => {
+                // Apply parallax to hit test
+                const drawX = n.x + sceneRotation.x * (n.level + 1) * 10;
+                const drawY = n.y + n.offsetY + sceneRotation.y * (n.level + 1) * 10;
+
+                const dx = mouseX - drawX;
+                const dy = mouseY - drawY;
+                if (dx * dx + dy * dy < CONFIG.nodeRadius * CONFIG.nodeRadius) {
+                    n.isHovered = true;
+                    showTooltip(n, drawX, drawY);
+                    found = true;
+                } else {
+                    n.isHovered = false;
+                }
+            });
+            if (!found) hideTooltip();
+
+            // Parallax Target
+            targetX = (mouseX / width - 0.5) * 2; // -1 to 1
+            targetY = (mouseY / height - 0.5) * 2;
+        }
+
+        function onClick() {
+            // Manual pulse from root
+            if (root) root.glow = 1.5;
+        }
+
+        function showTooltip(node, x, y) {
+            tooltip.classList.add('visible');
+            tooltip.style.left = (x + 20) + 'px';
+            tooltip.style.top = (y - 20) + 'px';
+            ttVal.innerText = node.value;
+        }
+
+        function hideTooltip() {
+            tooltip.classList.remove('visible');
+        }
+
+        function loop() {
+            requestAnimationFrame(loop);
+            ctx.clearRect(0, 0, width, height);
+
+            const t = Date.now() * 0.001;
+
+            // Update Parallax
+            sceneRotation.x += (targetX * 0.5 - sceneRotation.x) * 0.05;
+            sceneRotation.y += (targetY * 0.5 - sceneRotation.y) * 0.05;
+
+            // Draw Cables (Back to front)
+            // Actually nodes draw their own cables to parents.
+            // But we should draw cables first so they are behind nodes.
+            // We'll iterate twice.
+
+            // 1. Logic & Lerp Positions
+            nodes.forEach(n => {
+                n.x += (n.destX - n.x) * 0.1;
+                n.y += (n.destY - n.y) * 0.1;
+                n.update(t);
+            });
+
+            // 2. Draw Connections
+            // We need to set context mostly common
+            nodes.forEach(n => {
+                if (n.parent) {
+                    // Recalculate draw positions for cables
+                    const drawX = n.x + sceneRotation.x * (n.level + 1) * 10;
+                    const drawY = n.y + n.offsetY + sceneRotation.y * (n.level + 1) * 10;
+                    const parentX = n.parent.x + sceneRotation.x * (n.parent.level + 1) * 10;
+                    const parentY = n.parent.y + n.parent.offsetY + sceneRotation.y * (n.parent.level + 1) * 10;
+
+                    ctx.beginPath();
+                    ctx.moveTo(parentX, parentY + CONFIG.nodeRadius * 0.5);
+                    ctx.quadraticCurveTo(parentX, (parentY + drawY) / 2, drawX, drawY - CONFIG.nodeRadius * 0.8);
+
+                    // Gradient Line
+                    const grad = ctx.createLinearGradient(parentX, parentY, drawX, drawY);
+                    grad.addColorStop(0, n.parent.glow > 0.1 ? CONFIG.primaryColor : CONFIG.inactiveColor);
+                    grad.addColorStop(1, n.glow > 0.1 ? CONFIG.primaryColor : CONFIG.inactiveColor);
+
+                    ctx.strokeStyle = grad;
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+                }
+            });
+
+            // 3. Draw Nodes
+            nodes.forEach(n => n.draw(ctx));
+
+            // 4. Update & Draw Packets
+            packets.forEach(p => {
+                p.update();
+                p.draw(ctx);
+            });
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

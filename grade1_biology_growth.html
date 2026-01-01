@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Plant Growth</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #fff;
+            font-family: 'Fredoka', sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .ui {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 24px;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            width: 250px;
+        }
+
+        label {
+            display: block;
+            margin-top: 15px;
+            font-weight: bold;
+            color: #555;
+        }
+
+        input[type=range] {
+            width: 100%;
+        }
+
+        .feedback {
+            margin-top: 20px;
+            font-weight: bold;
+            text-align: center;
+            font-size: 18px;
+            min-height: 24px;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="ui">
+        <h1 class="text-xl font-body text-green-700 mb-4">Plant Care 🌱</h1>
+
+        <label>☀️ Sunlight</label>
+        <input type="range" id="sun-slider" min="0" max="100" value="50">
+
+        <label>💧 Water</label>
+        <input type="range" id="water-slider" min="0" max="100" value="50">
+
+        <div class="feedback" id="feedback">All good!</div>
+
+        <button onclick="resetPlant()"
+            class="w-full mt-6 bg-green-600 text-white rounded-full py-2 font-bold hover:bg-green-700">Replant</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const fbIdx = document.getElementById('feedback');
+
+        let width, height;
+        let TIME = 0;
+        let SUN = 50;
+        let WATER = 50;
+        let GROWTH = 0; // 0 to 100
+        let HEALTH = 100;
+
+        // Colors
+        let leafColor = '#4ade80';
+        let stemColor = '#84cc16';
+
+        document.getElementById('sun-slider').addEventListener('input', e => SUN = parseInt(e.target.value));
+        document.getElementById('water-slider').addEventListener('input', e => WATER = parseInt(e.target.value));
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        window.resetPlant = () => { GROWTH = 0; HEALTH = 100; TIME = 0; };
+
+        // --- FRACTAL TREE ---
+        function drawBranch(startX, startY, len, angle, depth, width) {
+            ctx.beginPath();
+            ctx.save();
+            ctx.translate(startX, startY);
+            ctx.rotate(angle * Math.PI / 180);
+
+            // Determine Health Color
+            // Too much sun = yellow. Too little = pale. Correct = Green.
+            // Too much water = brown rot. Too little = shriveled.
+
+            ctx.strokeStyle = stemColor;
+            ctx.lineWidth = width;
+            ctx.lineCap = 'round';
+
+            ctx.moveTo(0, 0);
+            ctx.lineTo(0, -len);
+            ctx.stroke();
+
+            // Leaves at ends
+            if (len < 10 || depth === 0) {
+                ctx.beginPath();
+                ctx.arc(0, -len, 6 + (WATER / 10), 0, Math.PI * 2);
+                ctx.fillStyle = leafColor;
+                if (HEALTH < 50) ctx.fillStyle = '#a16207'; // Dead
+                ctx.fill();
+            } else {
+                ctx.translate(0, -len);
+                // Recursive
+                const spread = 20 + (HEALTH / 5); // Healthy plants spread more
+                const nextLen = len * 0.75;
+                const nextW = width * 0.7;
+
+                drawBranch(0, 0, nextLen, spread, depth - 1, nextW);
+                drawBranch(0, 0, nextLen, -spread, depth - 1, nextW);
+
+                // Extra center branch if healthy
+                if (HEALTH > 80 && depth > 2) {
+                    drawBranch(0, 0, nextLen * 0.8, 0, depth - 1, nextW);
+                }
+            }
+
+            ctx.restore();
+        }
+
+        function loop() {
+            // Logic
+            TIME++;
+
+            // Check Balance
+            let stress = 0;
+            if (SUN < 20) { stress += 0.5; fbIdx.innerText = "Needs Sun!"; fbIdx.style.color = "gray"; }
+            if (SUN > 80) { stress += 1; fbIdx.innerText = "Too Hot!"; fbIdx.style.color = "orange"; leafColor = '#facc15'; }
+            if (WATER < 20) { stress += 0.5; fbIdx.innerText = "Thirsty!"; fbIdx.style.color = "brown"; }
+            if (WATER > 80) { stress += 1; fbIdx.innerText = "Drowning!"; fbIdx.style.color = "blue"; stemColor = '#78350f'; }
+
+            if (stress === 0) {
+                HEALTH = Math.min(100, HEALTH + 0.2);
+                GROWTH = Math.min(100, GROWTH + 0.2);
+                leafColor = '#4ade80'; stemColor = '#65a30d';
+                fbIdx.innerText = "Growing! 🌿"; fbIdx.style.color = "#15803d";
+            } else {
+                HEALTH = Math.max(0, HEALTH - stress);
+            }
+
+            // Draw Sky
+            let grad = ctx.createLinearGradient(0, 0, 0, height);
+            grad.addColorStop(0, `rgba(50, 200, 255, ${0.2 + SUN / 200})`);
+            grad.addColorStop(1, '#fff');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, width, height);
+
+            // Sun Visual
+            ctx.beginPath();
+            ctx.arc(width - 100, 100, 40 + (SUN / 2), 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(252, 211, 77, ${SUN / 100})`;
+            ctx.fill();
+
+            // Rain/Water Visual
+            if (WATER > 60) {
+                ctx.beginPath(); ctx.fillStyle = 'rgba(56, 189, 248, 0.5)';
+                for (let i = 0; i < (WATER - 60); i++) {
+                    ctx.rect(Math.random() * width, Math.random() * height, 2, 10);
+                }
+                ctx.fill();
+            }
+
+            // Ground
+            ctx.fillStyle = '#a16207'; // Soil
+            ctx.beginPath();
+            ctx.ellipse(width / 2, height, width / 1.5, 100, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw Tree
+            if (GROWTH > 0) {
+                const size = (GROWTH / 100) * 120;
+                const depth = Math.floor(GROWTH / 20) + 1;
+                drawBranch(width / 2, height - 50, size, 0, depth, 15 * (GROWTH / 100));
+            } else {
+                // Seed
+                ctx.fillStyle = '#78350f';
+                ctx.beginPath(); ctx.arc(width / 2, height - 40, 5, 0, Math.PI * 2); ctx.fill();
+            }
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Photosynthesis Factory</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #064e3b;
+            font-family: 'Fredoka', sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .score {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 30px;
+            color: #fff;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+    <div class="score">SUGAR: <span id="sugar-cnt">0</span></div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const sc = document.getElementById('sugar-cnt');
+
+        let width, height;
+        let ITEMS = [];
+        let SUGAR = 0;
+
+        // Factory State
+        let ENERGY = 0; // From Sun
+        let WATER = 0;
+        let CO2 = 0;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+
+            // Spawner
+            setInterval(spawnSun, 500);
+            setInterval(spawnWater, 1000);
+            setInterval(spawnCO2, 1500);
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function spawnSun() { ITEMS.push({ x: Math.random() * width, y: -20, type: 'sun', vy: 2 }); }
+        function spawnWater() { ITEMS.push({ x: -20, y: height - 100, type: 'water', vx: 2, vy: 0 }); } // Conveyor left
+        function spawnCO2() { ITEMS.push({ x: width + 20, y: height - 150, type: 'co2', vx: -2, vy: 0 }); } // Conveyor right
+
+        function loop() {
+            ctx.fillStyle = '#064e3b';
+            ctx.fillRect(0, 0, width, height);
+
+            const cx = width / 2; const cy = height / 2;
+
+            // Draw Machine (Chloroplast)
+            ctx.fillStyle = '#22c55e';
+            ctx.beginPath(); ctx.arc(cx, cy, 100, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#15803d'; ctx.lineWidth = 10; ctx.stroke();
+
+            // Indicators
+            ctx.fillStyle = '#facc15'; ctx.fillRect(cx - 40, cy - 40, ENERGY, 10);
+            ctx.fillStyle = '#3b82f6'; ctx.fillRect(cx - 40, cy - 20, WATER * 20, 10);
+            ctx.fillStyle = '#94a3b8'; ctx.fillRect(cx - 40, cy, CO2 * 20, 10);
+
+            // Processing Logic
+            if (ITEMS.length > 0) {
+                // Move Items
+                for (let i = ITEMS.length - 1; i >= 0; i--) {
+                    let p = ITEMS[i];
+                    p.x += (p.vx || 0); p.y += (p.vy || 0);
+
+                    // Collision with Machine
+                    const dx = p.x - cx; const dy = p.y - cy;
+                    if (Math.sqrt(dx * dx + dy * dy) < 100) {
+                        if (p.type === 'sun') { ENERGY = Math.min(80, ENERGY + 10); }
+                        if (p.type === 'water') { WATER = Math.min(4, WATER + 1); }
+                        if (p.type === 'co2') { CO2 = Math.min(4, CO2 + 1); }
+                        ITEMS.splice(i, 1);
+                    }
+
+                    // Render
+                    if (p.type === 'sun') ctx.fillStyle = 'yellow';
+                    if (p.type === 'water') ctx.fillStyle = 'blue';
+                    if (p.type === 'co2') ctx.fillStyle = 'gray';
+                    if (p.type === 'sugar') ctx.fillStyle = 'white';
+                    if (p.type === 'o2') ctx.fillStyle = '#a7f3d0';
+
+                    ctx.beginPath(); ctx.arc(p.x, p.y, 8, 0, Math.PI * 2); ctx.fill();
+                }
+            }
+
+            // Production
+            if (ENERGY >= 20 && WATER >= 1 && CO2 >= 1) {
+                ENERGY -= 20; WATER--; CO2--;
+                // Output Sugar
+                ITEMS.push({ x: cx, y: cy + 100, type: 'sugar', vy: 3 });
+                SUGAR++;
+                sc.innerText = SUGAR;
+                // Output O2
+                ITEMS.push({ x: cx, y: cy - 100, type: 'o2', vy: -3 });
+            }
+
+            // Anim Gear
+            ctx.save(); ctx.translate(cx, cy); ctx.rotate(Date.now() * 0.005);
+            ctx.strokeStyle = '#fff'; ctx.setLineDash([5, 5]); ctx.beginPath(); ctx.arc(0, 0, 80, 0, Math.PI * 2); ctx.stroke();
+            ctx.restore();
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Area Architect</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Share Tech Mono', monospace;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .hud {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 50, 255, 0.1);
+            border: 1px solid #3b82f6;
+            padding: 20px;
+            color: #3b82f6;
+            width: 200px;
+        }
+
+        .val {
+            font-size: 40px;
+            color: #60a5fa;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="hud">
+        <div>AREA</div>
+        <div class="val" id="area-val">0</div>
+        <div class="mt-4">PERIMETER</div>
+        <div class="val" id="peri-val">0</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const av = document.getElementById('area-val');
+        const pv = document.getElementById('peri-val');
+
+        let width, height;
+
+        // Grid
+        const G_SIZE = 40;
+
+        // Selection
+        let SEL = { x: 0, y: 0, w: 0, h: 0, dragging: false };
+        let START = { x: 0, y: 0 };
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Iso Helper
+        const OFF_X = 500; const OFF_Y = 100;
+        function toIso(x, y) {
+            return {
+                x: width / 2 + (x - y) * G_SIZE,
+                y: height / 4 + (x + y) * (G_SIZE * 0.5)
+            };
+        }
+
+        // Coords from mouse? Hard in iso.
+        // Simple 2D approach mapped 1:1 or actual raycasting?
+        // Let's do simple inverse for flat plane.
+        // y_iso = (x+y)/2 -> 2y_iso = x+y
+        // x_iso = x-y
+        // 2y_iso - x_iso = 2y -> y = y_iso - x_iso/2
+        // x = x_iso + y
+
+        function fromIso(screenX, screenY) {
+            const adjX = screenX - width / 2;
+            const adjY = screenY - height / 4;
+            // adjY = (x+y)*0.5*G
+            // adjX = (x-y)*G
+            // adjY / 0.5G = x+y
+            // adjX / G = x-y
+
+            const Y = ((adjY / (0.5 * G_SIZE)) - (adjX / G_SIZE)) / 2;
+            const X = (adjX / G_SIZE) + Y;
+            return { x: Math.round(X), y: Math.round(Y) };
+        }
+
+        canvas.addEventListener('mousedown', e => {
+            SEL.dragging = true;
+            const p = fromIso(e.clientX, e.clientY);
+            START = p;
+            SEL.x = p.x; SEL.y = p.y; SEL.w = 0; SEL.h = 0;
+        });
+
+        canvas.addEventListener('mousemove', e => {
+            if (SEL.dragging) {
+                const p = fromIso(e.clientX, e.clientY);
+                SEL.w = p.x - START.x;
+                SEL.h = p.y - START.y;
+                updateStats();
+            }
+        });
+
+        window.addEventListener('mouseup', () => SEL.dragging = false);
+
+        function updateStats() {
+            const w = Math.abs(SEL.w) + 1; // Inclusive
+            const h = Math.abs(SEL.h) + 1;
+            const area = w * h;
+            const peri = 2 * (w + h);
+            av.innerText = area;
+            pv.innerText = peri;
+        }
+
+        function loop() {
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, width, height);
+
+            // Grid Floor
+            ctx.strokeStyle = '#1e293b';
+            for (let i = -10; i <= 20; i++) {
+                // Lines
+                const start = toIso(i, -10); const end = toIso(i, 20);
+                ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+                const s2 = toIso(-10, i); const e2 = toIso(20, i);
+                ctx.beginPath(); ctx.moveTo(s2.x, s2.y); ctx.lineTo(e2.x, e2.y); ctx.stroke();
+            }
+
+            // Draw Selection
+            const x1 = Math.min(START.x, START.x + SEL.w);
+            const y1 = Math.min(START.y, START.y + SEL.h);
+            const x2 = Math.max(START.x, START.x + SEL.w);
+            const y2 = Math.max(START.y, START.y + SEL.h);
+
+            for (let y = y1; y <= y2; y++) {
+                for (let x = x1; x <= x2; x++) {
+                    const p = toIso(x, y);
+                    // Draw Cube
+                    drawCube(p.x, p.y, '#3b82f6');
+                }
+            }
+
+            // Draw Perimeter Fence
+            // Simple: just outline the blocks
+
+            requestAnimationFrame(loop);
+        }
+
+        function drawCube(x, y, color) {
+            const h = 20; // height
+            ctx.fillStyle = 'rgba(59, 130, 246, 0.5)';
+            ctx.strokeStyle = '#60a5fa';
+
+            ctx.beginPath();
+            ctx.moveTo(x, y - h);
+            ctx.lineTo(x + G_SIZE, y + G_SIZE / 2 - h);
+            ctx.lineTo(x, y + G_SIZE - h);
+            ctx.lineTo(x - G_SIZE, y + G_SIZE / 2 - h);
+            ctx.closePath();
+            ctx.fill(); ctx.stroke();
+
+            // Sides
+            ctx.fillStyle = 'rgba(59, 130, 246, 0.3)';
+            ctx.beginPath(); ctx.moveTo(x - G_SIZE, y + G_SIZE / 2 - h); ctx.lineTo(x, y + G_SIZE - h); ctx.lineTo(x, y + G_SIZE); ctx.lineTo(x - G_SIZE, y + G_SIZE / 2); ctx.fill(); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(x + G_SIZE, y + G_SIZE / 2 - h); ctx.lineTo(x, y + G_SIZE - h); ctx.lineTo(x, y + G_SIZE); ctx.lineTo(x + G_SIZE, y + G_SIZE / 2); ctx.fill(); ctx.stroke();
+        }
+
+        loop();
+
+    </script>
+</body>
+
+</html>

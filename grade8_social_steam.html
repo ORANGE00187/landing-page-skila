@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Steam Revolution Engine</title>
+    <link href="https://fonts.googleapis.com/css2?family=Rye&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #1a1510;
+            font-family: 'Rye', serif;
+            color: #d4a373;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(40, 30, 20, 0.9);
+            border: 2px solid #a67c52;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+
+        button {
+            background: #a67c52;
+            color: #221;
+            border: 2px solid #553;
+            padding: 10px 20px;
+            font-family: inherit;
+            font-size: 18px;
+            cursor: pointer;
+            display: block;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            background: #c69c72;
+        }
+
+        button:active {
+            background: #865c32;
+        }
+
+        .meter {
+            width: 200px;
+            height: 20px;
+            background: #000;
+            border: 1px solid #555;
+            margin-top: 5px;
+            position: relative;
+        }
+
+        .fill {
+            height: 100%;
+            background: #f00;
+            width: 0%;
+            transition: width 0.2s;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="ui">
+        <h1 class="text-2xl mb-4 text-[#e0c0a0]">THE WATT ENGINE</h1>
+
+        <div>BOILER PRESSURE</div>
+        <div class="meter">
+            <div id="p-bar" class="fill" style="background: linear-gradient(to right, lime, red);"></div>
+        </div>
+        <div id="p-val" class="text-right text-xs">0 PSI</div>
+
+        <div class="mt-4">FACTORY OUTPUT</div>
+        <div id="output-val" class="text-3xl text-white">0 UNITS</div>
+
+        <button onmousedown="shovelCoal()">SHOVEL COAL</button>
+        <button onmousedown="releaseValve()" class="bg-red-900 border-red-700 text-red-200">RELEASE VALVE</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const pBar = document.getElementById('p-bar');
+        const pVal = document.getElementById('p-val');
+        const outVal = document.getElementById('output-val');
+
+        let width, height;
+
+        // Sim State
+        let HEAT = 0;
+        let PRESSURE = 0;
+        let RPM = 0;
+        let PISTON_POS = 0; // 0 to 1
+        let PHASE = 0; // Cycle phase 0-2PI
+
+        let COAL_PARTICLES = [];
+        let STEAM_PARTICLES = [];
+        let UNITS = 0;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        window.shovelCoal = () => {
+            HEAT = Math.min(100, HEAT + 20);
+            // Spawn visual coal
+            for (let i = 0; i < 5; i++) {
+                COAL_PARTICLES.push({
+                    x: width * 0.2 + (Math.random() - 0.5) * 50,
+                    y: height * 0.8,
+                    vx: (Math.random() - 0.5) * 5, vy: -5 - Math.random() * 5,
+                    life: 1.0
+                });
+            }
+        };
+
+        window.releaseValve = () => {
+            PRESSURE = Math.max(0, PRESSURE - 30);
+            // Steam burst visual
+            for (let i = 0; i < 30; i++) {
+                STEAM_PARTICLES.push({
+                    x: width * 0.4, y: height * 0.4,
+                    vx: (Math.random() - 0.5) * 10, vy: -5 - Math.random() * 10,
+                    life: 1.0, size: 10 + Math.random() * 10
+                });
+            }
+        };
+
+        function update() {
+            // Thermodynamics
+            // Heat decays
+            HEAT *= 0.99;
+
+            // Heat generates Pressure
+            // Ideal Gas Law ish: PV = nRT. V is constant in boiler. P ~ T.
+            const targetP = HEAT * 2; // Max 200 PSI
+            PRESSURE += (targetP - PRESSURE) * 0.02;
+
+            // Pressure drives Piston (Motion)
+            // Force = Pressure * Area
+            // RPM based on Pressure
+            const targetRPM = PRESSURE * 2;
+            RPM += (targetRPM - RPM) * 0.1;
+
+            // Cycle
+            PHASE += RPM * 0.005;
+            PISTON_POS = 0.5 + 0.5 * Math.sin(PHASE);
+
+            // Production
+            UNITS += RPM * 0.01;
+
+            // Danger
+            if (PRESSURE > 180) {
+                // Shake screen
+                if (Math.random() > 0.5) ctx.translate((Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5);
+            }
+
+            // UI
+            pBar.style.width = (PRESSURE / 200) * 100 + "%";
+            pVal.innerText = Math.round(PRESSURE) + " PSI";
+            outVal.innerText = Math.floor(UNITS) + " UNITS";
+        }
+
+        function loop() {
+            ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset shake
+            update();
+
+            // Clear
+            ctx.fillStyle = '#1a1510';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw Engine Schematic
+
+            // 1. Furnace (Bottom Left)
+            const fx = width * 0.2; const fy = height * 0.7;
+            ctx.fillStyle = '#221'; ctx.fillRect(fx - 100, fy, 200, 150);
+            // Fire
+            const fireH = HEAT;
+            if (fireH > 1) {
+                ctx.fillStyle = `rgba(255, ${100 + Math.random() * 100}, 0, ${fireH / 100})`;
+                ctx.beginPath();
+                ctx.moveTo(fx - 80, fy + 140);
+                ctx.lineTo(fx + 80, fy + 140);
+                ctx.lineTo(fx, fy + 140 - fireH);
+                ctx.fill();
+            }
+            // Coal
+            ctx.fillStyle = '#111';
+            COAL_PARTICLES.forEach((p, i) => {
+                p.x += p.vx; p.y += p.vy; p.vy += 0.5; // Gravity
+                if (p.y > fy + 140) { p.y = fy + 140; p.vx = 0; p.vy = 0; } // Land
+                ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill();
+            });
+
+            // 2. Boiler (Above Furnace)
+            const by = fy - 150;
+            ctx.fillStyle = '#445'; ctx.fillRect(fx - 100, by, 200, 150);
+            ctx.strokeStyle = '#865c32'; ctx.lineWidth = 10; ctx.strokeRect(fx - 100, by, 200, 150); // Brass rim
+            // Water Level
+            ctx.fillStyle = 'rgba(0,100,255,0.5)';
+            ctx.fillRect(fx - 90, by + 50, 180, 90);
+            // Bubbles
+            if (HEAT > 20) {
+                ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                for (let i = 0; i < 10; i++) {
+                    if (Math.random() > 0.5) ctx.beginPath(); ctx.arc(fx - 90 + Math.random() * 180, by + 140 - Math.random() * 90, 2 + Math.random() * 3, 0, Math.PI * 2); ctx.fill();
+                }
+            }
+
+            // 3. Piston Cylinder (Center)
+            const cx = width * 0.5; const cy = height * 0.4;
+            ctx.fillStyle = '#333'; ctx.fillRect(cx - 40, cy, 80, 200); // Cylinder
+
+            // Piston Head (Moves)
+            const py = cy + 20 + PISTON_POS * 140;
+            ctx.fillStyle = '#888'; ctx.fillRect(cx - 35, py, 70, 20);
+            // Rod
+            ctx.strokeStyle = '#aaa'; ctx.lineWidth = 10;
+            ctx.beginPath(); ctx.moveTo(cx, py + 10); ctx.lineTo(cx, py + 200); ctx.stroke();
+
+            // Pipe from Boiler to Piston
+            ctx.strokeStyle = '#643'; ctx.lineWidth = 15; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            ctx.beginPath(); ctx.moveTo(fx, by); ctx.lineTo(fx, by - 50); ctx.lineTo(cx - 40, by - 50); ctx.lineTo(cx - 40, cy + 20); ctx.stroke();
+
+            // 4. Flywheel (Right)
+            const wx = width * 0.7; const wy = height * 0.7;
+            const wr = 100;
+
+            // Crank Arm Logic
+            // Piston moves vertical. Flywheel rotates.
+            // Conn rod links Piston Rod Bottom to Wheel Edge.
+            // Simplification: Direct drive visual
+
+            ctx.save();
+            ctx.translate(wx, wy);
+            ctx.rotate(PHASE);
+
+            // Wheel
+            ctx.beginPath(); ctx.arc(0, 0, wr, 0, Math.PI * 2);
+            ctx.lineWidth = 20; ctx.strokeStyle = '#5a4a3a'; ctx.stroke();
+            ctx.lineWidth = 5; ctx.strokeStyle = '#daa520'; ctx.stroke(); // Gold rim
+
+            // Spokes
+            for (let i = 0; i < 6; i++) {
+                ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(i) * wr, Math.sin(i) * wr); ctx.stroke();
+            }
+
+            ctx.restore();
+
+            // Linkage Arm
+            // Connects (cx, py+something) to (wx + cos*r, wy + sin*r)
+            const wheelPinX = wx + Math.cos(PHASE) * wr * 0.8;
+            const wheelPinY = wy + Math.sin(PHASE) * wr * 0.8;
+
+            ctx.strokeStyle = '#889'; ctx.lineWidth = 8;
+            ctx.beginPath(); ctx.moveTo(cx, py + 10); // Piston
+            ctx.lineTo(wheelPinX, wheelPinY); // Wheel
+            ctx.stroke();
+
+            // 5. Factory Belt (Bottom)
+            ctx.fillStyle = '#111'; ctx.fillRect(wx - 50, wy + 110, 500, 20); // Belt
+            // Moving parts on belt
+            const beltOff = (Date.now() / 5 * (RPM / 100)) % 100;
+            for (let i = 0; i < 5; i++) {
+                ctx.fillStyle = '#c75';
+                ctx.fillRect(wx + i * 100 + beltOff, wy + 90, 40, 20); // Boxes
+            }
+
+            // Steam Particles
+            STEAM_PARTICLES.forEach((p, i) => {
+                p.x += p.vx; p.y += p.vy; p.size *= 1.05; p.life -= 0.02;
+                ctx.fillStyle = `rgba(255,255,255,${p.life * 0.5})`;
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+                if (p.life <= 0) STEAM_PARTICLES.splice(i, 1);
+            });
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+
+    </script>
+</body>
+
+</html>

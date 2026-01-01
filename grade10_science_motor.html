@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | DC Electric Motor Engine</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --copper: #b87333;
+            --magnet-red: #ef4444;
+            --magnet-blue: #3b82f6;
+            --electron: #fbbf24;
+            --spark: #ffffff;
+            --bg-dark: #050505;
+            --grid: rgba(255, 255, 255, 0.05);
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: var(--bg-dark);
+            font-family: 'Orbitron', sans-serif;
+            color: white;
+            user-select: none;
+        }
+
+        /* HUD */
+        #hud-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .panel {
+            pointer-events: auto;
+            background: rgba(10, 20, 30, 0.9);
+            border: 1px solid #334155;
+            backdrop-filter: blur(5px);
+            padding: 20px;
+        }
+
+        #controls {
+            position: absolute;
+            top: 50%;
+            left: 20px;
+            transform: translateY(-50%);
+            width: 300px;
+            border-left: 4px solid var(--magnet-blue);
+        }
+
+        h1 {
+            font-size: 20px;
+            font-weight: 900;
+            color: var(--magnet-blue);
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .control-row {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #94a3b8;
+            margin-bottom: 5px;
+        }
+
+        .val-disp {
+            color: white;
+            font-weight: bold;
+        }
+
+        input[type=range] {
+            width: 100%;
+            -webkit-appearance: none;
+            background: transparent;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: var(--magnet-blue);
+            margin-top: -6px;
+            box-shadow: 0 0 10px var(--magnet-blue);
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            background: #334155;
+        }
+
+        #stats-panel {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            width: 250px;
+            text-align: right;
+            border-right: 4px solid var(--magnet-red);
+        }
+
+        .stat-big {
+            font-size: 40px;
+            font-weight: 900;
+            color: white;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #64748b;
+            letter-spacing: 1px;
+        }
+
+        /* 3D LABEL OVERLAYS */
+        .world-label {
+            position: absolute;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 12px;
+            font-weight: bold;
+            text-shadow: 0 0 5px black;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+        }
+
+        #vectors-toggle {
+            margin-top: 10px;
+            padding: 10px;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: #fff;
+            cursor: pointer;
+            width: 100%;
+            font-family: 'Orbitron';
+        }
+
+        #vectors-toggle:hover {
+            background: #1e293b;
+        }
+
+        #vectors-toggle.active {
+            background: var(--magnet-blue);
+            border-color: var(--magnet-blue);
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div id="hud-layer">
+        <div class="panel" id="controls">
+            <h1>DC Motor Engine</h1>
+
+            <div class="control-row">
+                <label><span>VOLTAGE (V)</span><span class="val-disp" id="val-volt">0V</span></label>
+                <input type="range" id="inp-volt" min="-12" max="12" step="0.5" value="0">
+            </div>
+
+            <div class="control-row">
+                <label><span>MAGNETIC FIELD (B)</span><span class="val-disp" id="val-mag">1.0T</span></label>
+                <input type="range" id="inp-mag" min="0.1" max="2.0" step="0.1" value="1.0">
+            </div>
+
+            <div class="control-row">
+                <label><span>COIL RESISTANCE (R)</span><span class="val-disp" id="val-res">5Ω</span></label>
+                <input type="range" id="inp-res" min="1" max="20" step="1" value="5">
+            </div>
+
+            <button id="vectors-toggle" class="active" onclick="toggleVectors()">SHOW LORENTZ VECTORS</button>
+        </div>
+
+        <div class="panel" id="stats-panel">
+            <div class="stat-big" id="disp-rpm">0</div>
+            <div class="stat-label">RPM</div>
+
+            <div class="stat-big" id="disp-amp" style="font-size: 24px; color: var(--electron); margin-top:10px;">0.0 A
+            </div>
+            <div class="stat-label">CURRENT (I)</div>
+
+            <div class="stat-big" id="disp-torque" style="font-size: 24px; color: #10b981; margin-top:10px;">0.0 Nm
+            </div>
+            <div class="stat-label">TORQUE (T)</div>
+        </div>
+    </div>
+
+    <!-- 3D Labels injected by JS -->
+    <div id="labels-mount"></div>
+
+    <script>
+        /**
+         * DC MOTO PHYSICS ENGINE & RENDERER
+         * Simulating Electromagnetism: F = I * L x B
+         * Approximating 3D Rotation using 2D Canvas scaling transformation.
+         */
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const labelsMount = document.getElementById('labels-mount');
+
+        // --- CONSTANTS ---
+        const COIL_W = 200; // Physical width
+        const COIL_H = 120; // Physical height
+        const MAGNET_GAP = 300;
+
+        // --- STATE ---
+        let W, H;
+
+        let VOLTS = 0;
+        let FIELD_B = 1.0;
+        let RESISTANCE = 5.0;
+
+        let ANGLE = 0; // Radians, 0 = Horizontal coil
+        let VELOCITY = 0; // Angular velocity (rad/s)
+
+        let CURRENT_I = 0;
+        let FLUX_LINKAGE = 0; // For Back EMF? Maybe too complex. Let's do simplified motor eq.
+
+        let SHOW_VECTORS = true;
+
+        // Particles (Electrons)
+        let ELECTRONS = []; // { offset (0-1), side }
+
+        // Sparks
+        let SPARKS = [];
+
+        // --- INIT ---
+        function init() {
+            resize();
+            // Bind Controls
+            document.getElementById('inp-volt').addEventListener('input', e => {
+                VOLTS = parseFloat(e.target.value);
+                document.getElementById('val-volt').innerText = VOLTS.toFixed(1) + "V";
+            });
+            document.getElementById('inp-mag').addEventListener('input', e => {
+                FIELD_B = parseFloat(e.target.value);
+                document.getElementById('val-mag').innerText = FIELD_B.toFixed(1) + "T";
+            });
+            document.getElementById('inp-res').addEventListener('input', e => {
+                RESISTANCE = parseFloat(e.target.value);
+                document.getElementById('val-res').innerText = RESISTANCE.toFixed(0) + "Ω";
+            });
+
+            // Populate Electrons
+            // simplified: electrons live on the loop path.
+            // path length approx 2*W + 2*H
+            for (let i = 0; i < 50; i++) {
+                ELECTRONS.push({ pos: Math.random(), speed: 0 });
+            }
+
+            loop();
+        }
+
+        function resize() {
+            W = canvas.width = window.innerWidth;
+            H = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        window.toggleVectors = () => {
+            SHOW_VECTORS = !SHOW_VECTORS;
+            document.getElementById('vectors-toggle').classList.toggle('active');
+        };
+
+        // --- PHYSICS ---
+        function updatePhysics() {
+            // 1. Calculate Current
+            // I = V / R
+            // Simple model: No Back EMF for now, or maybe simplified Back EMF: V_net = V - k*w
+            const k_emf = 0.5; // Back EMF constant
+            const V_net = VOLTS - (VELOCITY * k_emf);
+
+            CURRENT_I = V_net / RESISTANCE;
+
+            // 2. Commutator Logic
+            // If coil is vertical (ANGLE = PI/2 or 3PI/2), contacts switch.
+            // In real physics, contact brushes slip.
+            // We simulate this by taking Math.cos(ANGLE) factor?
+            // Actually, Commutator FLIPS the current direction relative to the coil frame
+            // such that Torque is always positive (mostly).
+            // But wait, V is constant from source. The Commutator physically switches which coil arm gets +V.
+            // So mechanically, the Current DIRECTION in the physical coil arm flips.
+            // Simplified: The Torque equation T = N * I * A * B * sin(theta)
+            // With Commutator: T = |I| * ... always pushing same way?
+            // Let's model Torque directly.
+
+            // Torque T = Force * radius * 2 (two arms).
+            // F = I * L * B.
+            // T = (I * L * B) * (Width/2) * sin(angle_active) * 2?
+            // Actually, Force F is perpendicular to B and I.
+            // Horizontal coil: F is UP/DOWN. Torque is Max.
+            // Vertical Coil: F is OUT/IN. Torque is Min (Zero lever arm).
+
+            // Commutator: It rectifies the input.
+            // If we didn't have commutator, coil would oscillate.
+            // With commutator, I flips sign when Angle passes vertical.
+
+            // Let's normalize ANGLE to 0..2PI
+            let normAng = ANGLE % (Math.PI * 2);
+            if (normAng < 0) normAng += Math.PI * 2;
+
+            // Commutator flip zone: PI/2 (90deg) and 3PI/2 (270deg)
+            // Just assume Ideal Commutator: Function of cos(theta) is rectified?
+
+            // Force Factor: Current * B.
+            // Lever Arm: cos(ANGLE). (When angle=0, lever is max. When angle=90, lever is 0).
+
+            const LeverArm = Math.cos(ANGLE);
+
+            // Torque
+            // If Current is driven by DC + Commutator, then Force direction depends on Commutator State.
+            // Real Commutator: Switches polarity when LeverArm crosses 0.
+            // So effectively, Torque is always pushing in rotation direction IF we manually flip I?
+            // Or rather, we model I as constant (ideal) and Torque = I * B * A * |cos(theta)|? NO.
+            // Torque = I * B * A * cos(theta).
+            // But I flips sign when cos(theta) crosses zero.
+            // So T = (SignFlip * I) * B * A * cos(theta).
+            // Which means T ~ |cos(theta)|. Always positive torque (for pos volt).
+
+            // Let's use Rectified Logic:
+            let CommutatorState = 1;
+            // Check vertical crossing
+            // Vertical is PI/2 (+/- small margin for spark)
+            const isVertical = Math.abs(Math.cos(ANGLE)) < 0.1;
+            if (Math.sin(ANGLE) > 0) CommutatorState = 1;
+            else CommutatorState = -1;
+
+            // Wait, Commutator switches exactly at vertical 90deg.
+            // So if sin(angle) is +, we are in 0-180 (top half?). No, 90 is vertical.
+            // Horizontal is 0. 
+            // 0 -> 90: Torque decreases.
+            // 90 -> 180: Torque Negative? No, this is where it would reverse if no commutator.
+            // With Commutator, I reverses.
+
+            // Let's simpler: Target Speed = V.
+            // Torque = k * I * B * cos(ANGLE).
+            // If cos(angle) < 0, we flip I (Commutator).
+            // So T = k * I * B * |cos(ANGLE)|.
+
+            // Spark Logic
+            if (Math.abs(Math.cos(ANGLE)) < 0.05 && Math.abs(VELOCITY) > 0.5) {
+                // Spark
+                if (Math.random() > 0.5) createSpark();
+            }
+
+            const TORQUE = (CURRENT_I * FIELD_B * 50) * Math.cos(ANGLE);
+
+            // Commutator Logic hard switch
+            // If calculate Torque just using raw Angle, it oscillates.
+            // Commutator ensures Torque matches Direction of motion desired?
+            // Actually, if we apply Signed Voltage, we want Signed Direction.
+            // The commutator mechanically links geometric angle to current direction.
+            // So if Angle is 90..270, Current is Reversed.
+            // Thus Force is inverted, keeping Torque positive.
+
+            // Correct Equation for DC Motor:
+            // T_generated = K * Phi * I_armature
+            // I_armature depends on V_source - E_back.
+            // E_back depends on Speed.
+
+            // Let's simplify:
+            // Force always tries to align coil to vertical? No, magnetic dipole.
+            // DC Motor force tries to rotate continuously.
+
+            // Let's simulate Force Magnitude = I * B.
+            // Force Direction (Local to coil) is always UP/DOWN on left/right arms?
+            // Commutator flips this relative to world.
+            // Result: Left Arm always pushed Up? Right Arm always pushed Down? 
+            // (Assuming +V).
+            // Yes, that's what a commutator does. It keeps the Left side of the machine acting as "Up Force" zone.
+
+            // So: F_left_world = +1 (if V>0) * |I| * B * (Efficiency dropped at vertical gaps)
+            // Vertical Gap: When |cos| < gap, F=0.
+
+            let powerFactor = 1;
+            if (Math.abs(Math.cos(ANGLE)) < 0.1) powerFactor = 0; // Commutator gap
+
+            let F_mag = CURRENT_I * FIELD_B * 20 * powerFactor;
+
+            // Torque = Force * radius * cos(angle) (Lever arm)
+            let T = F_mag * Math.cos(ANGLE);
+
+            // Wait, if Left arm is *always* pushed UP (World Y), then:
+            // At 0 deg: Arm at -R. Force Up. Torque = F*R. Positive (CW? No, CCW).
+            // At 90 deg: Arm at Top. Force Up. Torque = 0 (Parallel).
+            // At 180 deg: Arm at +R. Force Up. Torque = F*-R. Negative.
+            // This is BAD. Commutator should flip Force direction in World Space?
+            // No, Commutator flips current in Coil Space.
+            // Which means Force direction in World Space stays roughly consistent?
+            // Actually, Lorenz Force F = I x B.
+            // B is constant (Left-Right).
+            // I direction flips.
+            // So F direction flips.
+
+            // Simulation approach:
+            // 1. Determine I_coil_local based on V.
+            //    (Commutator logic: I_coil = I_source * Sign(cos(angle))? )
+            //    No, Commutator switches at 90 deg (Vertical).
+            //    So if Angle is 90..270, switch polarity.
+
+            let commSign = 1;
+            if (Math.sin(ANGLE) > 0 && Math.sin(ANGLE) < Math.PI) {
+                // Top half?
+            }
+            // Let's just say: If sin(angle) > 0 (0..180), we capture "Top" half.
+            // Actually vertical is PI/2.
+            // Let's map 0..2PI.
+            // The brush switch happens at 90 (PI/2) and 270 (3PI/2).
+            // So Quadrants 1,4 vs 2,3?
+
+            // Simplest visual trick:
+            // T = I_input * B * |cos(Angle)|.
+            // Direction follows sign of I_input.
+
+            const torque = (CURRENT_I * FIELD_B * 2) * Math.abs(Math.cos(ANGLE));
+
+            // Dynamics
+            VELOCITY += torque * 0.05;
+
+            // Friction
+            VELOCITY *= 0.96;
+
+            ANGLE += VELOCITY * 0.1;
+
+            // Electron animation speed
+            updateElectrons(CURRENT_I * 5); // Speed prop to current
+
+            // Stats
+            // RPM: rad/frame * 60fps * 60 = rad/s ...
+            const rpm = Math.abs(VELOCITY * 100).toFixed(0);
+            document.getElementById('disp-rpm').innerText = rpm;
+            document.getElementById('disp-amp').innerText = Math.abs(CURRENT_I).toFixed(2) + " A";
+            document.getElementById('disp-torque').innerText = torque.toFixed(1) + " Nm";
+
+            // Sparks
+            SPARKS.forEach((s, i) => {
+                s.life--; s.y += s.vy; s.x += s.vx; s.vy += 0.5;
+                if (s.life <= 0) SPARKS.splice(i, 1);
+            });
+        }
+
+        function updateElectrons(speed) {
+            ELECTRONS.forEach(e => {
+                e.speed = speed;
+                e.pos += speed * 0.01;
+                if (e.pos > 1) e.pos -= 1;
+                if (e.pos < 0) e.pos += 1;
+            });
+        }
+
+        function createSpark() {
+            for (let i = 0; i < 10; i++) {
+                SPARKS.push({
+                    x: W / 2, y: H / 2 + 60, // Commutator pos approx
+                    vx: (Math.random() - 0.5) * 10,
+                    vy: (Math.random() - 0.5) * 10,
+                    life: 20
+                });
+            }
+        }
+
+        // --- RENDER ---
+        function render() {
+            ctx.fillStyle = '#050505';
+            ctx.fillRect(0, 0, W, H);
+
+            const cx = W / 2;
+            const cy = H / 2;
+
+            // 1. FIELD LINES (Background)
+            ctx.strokeStyle = 'rgba(50, 50, 100, 0.3)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([10, 10]);
+            for (let y = cy - 150; y < cy + 150; y += 30) {
+                ctx.beginPath(); ctx.moveTo(cx - 300, y); ctx.lineTo(cx + 300, y); ctx.stroke();
+            }
+            ctx.setLineDash([]);
+
+            // 2. MAGNETS (Stator)
+            // Left (North - Red)
+            ctx.fillStyle = '#ef4444';
+            ctx.fillRect(cx - 400, cy - 150, 100, 300);
+            // Right (South - Blue)
+            ctx.fillStyle = '#3b82f6';
+            ctx.fillRect(cx + 300, cy - 150, 100, 300);
+
+            // Labels
+            ctx.fillStyle = '#fff'; font = '40px Orbitron'; ctx.textAlign = 'center';
+            ctx.fillText("N", cx - 350, cy + 15);
+            ctx.fillText("S", cx + 350, cy + 15);
+
+            // 3. ROTOR (The Coil)
+            // We use 2D Transform to simulate 3D rotation.
+            // Scale X based on sin(angle).
+
+            const sinA = Math.sin(ANGLE);
+            const cosA = Math.cos(ANGLE); // Determines depth sort?
+
+            // Coil is a rectangle.
+            // Top/Bottom wires are horizontal.
+            // Left/Right wires are vertical.
+
+            // Transform:
+            // Project 3D points to 2D.
+            // Loop Points: TopLeft, TopRight, BotRight, BotLeft.
+            // Radius R = COIL_W / 2.
+            // Z rotation.
+            // The axle is Z axis? No, Axle is Y axis? Or X axis?
+            // "DC Motor": Usually Axle is perpendicular to Field Lines.
+            // Field is X axis (Left->Right).
+            // Axle is Z axis (Into screen).
+            // Rotation is in XY plane.
+
+            // Wait, if Axis is Z (Rotation in screen plane), then we just see a rectangle spinning?
+            // That's 2D.
+            // A "3D" motor usually has the Loop lying flat (XZ plane) and rotating around Z?
+            // Standard diagram: Field Left->Right. Axle Perpendicular (Into Screen). Coil rotates in screen plane.
+            // BUT, usually we visualize it in Perspective.
+            // Let's stick to "Axle is Horizontal (X), Field is Vertical (Y)"?
+            // Or "Field Horizontal (X), Axle Vertical (Y)"?
+            // Standard Physics Textbook: Field Left-Right. Loop rotates around Axis perpendicular to Field.
+            // Let's make Axle Vertical (Y axis). Loop rotates in Horizontal Plane (XZ).
+            // Viewed from Front (Z).
+            // So we see the Coil getting thin/wide.
+
+            // Axle Y.
+            // Coil rotates.
+            // Width projected = W * cos(angle).
+            // Height is constant.
+
+            const projW = COIL_W * Math.cos(ANGLE);
+
+            // Draw Axle
+            ctx.fillStyle = '#888';
+            ctx.fillRect(cx - 5, cy - 200, 10, 400);
+
+            // Draw Coil
+            // It's a wire frame.
+            ctx.save();
+            ctx.translate(cx, cy);
+
+            // We need to draw "Back" side first if rotating?
+            // If cos(angle) > 0, Front is visible.
+            // Actually, it's a wireframe, we see all.
+            // But we want depth cue (darker when 'back').
+
+            const isFlipped = Math.cos(ANGLE) < 0;
+
+            // Coordinates relative to center
+            const xL = -COIL_W / 2 * Math.cos(ANGLE);
+            const xR = COIL_W / 2 * Math.cos(ANGLE);
+            const yT = -COIL_H / 2;
+            const yB = COIL_H / 2;
+
+            // Wire Color
+            ctx.strokeStyle = '#b87333';
+            ctx.lineWidth = 8;
+            ctx.lineJoin = 'round';
+
+            // Draw Path
+            ctx.beginPath();
+            ctx.moveTo(0, yB + 50); // From Commutator
+            ctx.lineTo(0, yB);
+
+            // Split to arms?
+            // Visual simplification: A hoop.
+            // Since it scales through 0 (line), we need robust drawing.
+
+            // Left Vertical Arm (at xL) and Right Vertical Arm (at xR).
+            // Top/Bottom Horizontal Arms connect them.
+
+            // Draw "Back" arm first for z-sort?
+            // xL is "Left" in local space. xR is "Right".
+            // If angle rotates, xL moves right, xR moves left.
+
+            // Let's just draw the loop polygon.
+            // p1(xL, yT) -> p2(xR, yT) -> p3(xR, yB) -> p4(xL, yB) -> close
+
+            ctx.beginPath();
+            ctx.moveTo(xL, yB);
+            ctx.lineTo(xL, yT);
+            ctx.lineTo(xR, yT);
+            ctx.lineTo(xR, yB);
+            ctx.lineTo(xL, yB); // Close loop? No, leads go to axle.
+            // Break at bottom for leads
+            ctx.stroke();
+
+            // Leads to commutator
+            ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(xL, yB); ctx.lineTo(0, yB + 40); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(xR, yB); ctx.lineTo(0, yB + 40); ctx.stroke();
+
+            // ELECTRONS
+            // Flow along the path.
+            // Path: Comm -> Left -> Top -> Right -> Comm.
+            // Total Length ~ H + W + H...
+
+            if (Math.abs(CURRENT_I) > 0.1) {
+                // Determine layout
+                // Render dots along the segments
+
+                // Segments
+                const Segs = [
+                    { x1: 0, y1: yB + 40, x2: xL, y2: yB }, // Lead 1
+                    { x1: xL, y1: yB, x2: xL, y2: yT }, // Left
+                    { x1: xL, y1: yT, x2: xR, y2: yT }, // Top
+                    { x1: xR, y1: yT, x2: xR, y2: yB }, // Right
+                    { x1: xR, y1: yB, x2: 0, y2: yB + 40 } // Lead 2
+                ];
+
+                ctx.fillStyle = '#fbbf24';
+                ELECTRONS.forEach(e => {
+                    // Map pos (0..1) to Segments
+                    // Simplified distribution
+                    const totalLen = 5;
+                    const p = e.pos * totalLen;
+                    const idx = Math.floor(p);
+                    const rem = p - idx;
+
+                    if (Segs[idx]) {
+                        const s = Segs[idx];
+                        const ex = s.x1 + (s.x2 - s.x1) * rem;
+                        const ey = s.y1 + (s.y2 - s.y1) * rem;
+
+                        // Z-check: Don't draw if "behind" and loop is opaque? 
+                        // Loop is not opaque.
+
+                        ctx.beginPath(); Math.abs(CURRENT_I) * 2;
+                        ctx.arc(ex, ey, 4, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                });
+            }
+
+            // FORCE VECTORS (Lorentz)
+            // F = I x B.
+            // B is Horizontal. I is Vertical in arms.
+            // F is Z-axis (In/Out) or X-axis relative to rotation?
+            // In this "Axle Vertical" setup:
+            // Field X (LeftRight). I Up/Down (Y).
+            // F = I(Y) x B(X) = -Z (In/Out).
+            // Force is Perpendicular to Screen Plane!
+            // This is hard to visualize 2D. 
+            // The coil rotates around Y. Force in Z creates Torque around Y. correct.
+
+            // Visualization Trick: Draw Torque Vectors as Circular Arrows?
+            // Or change perspective: Axle is Z (Into screen). Field is X. Loop is in XY plane.
+            // This is the standard "Textbook" view.
+            // Let's assume the previous drawing logic was "Perspective View of Vertical Axle".
+            // But if we want clear F vectors, maybe Z-axle is better?
+            // "The Stator: Two massive magnets on Sides." -> Implies Horizontal Field.
+            // "Rotor in center."
+            // If Axle is Z (dot in center), Loop rotates like a wheel.
+            // Current flows In/Out of screen (Coil sides are circles).
+            // Then F = I(Z) x B(X) = Y (Up/Down).
+            // This is MUCH easier to visualize arrows for.
+
+            // RE-EVALUATE RENDER
+            // SWITCHING TO Z-AXIS AXLE (Standard 2D Motor Diagram)
+            // Stator: Left/Right.
+            // Rotor: Circle in center (Cross section of coil).
+            // Top/Bottom wires of coil? No, Left/Right wires.
+            // A simple DC motor loop is a rectangle.
+            // Rotating around Z-axis.
+            // We see the rectangle end-on? No, we see it flat.
+            // If flat, field lines pass through.
+            // Force is Expansion/Compression? No.
+
+            // Standard View:
+            // Magnets Left/Right.
+            // Coil Arm 1 (Top). Coil Arm 2 (Bottom).
+            // Rotation around Center.
+            // Yes.
+
+            // Let's pivot drawing to: Rotor is a Line rotating around center?
+            // This represents the plane of the coil.
+            // Arm 1 is at one end. Arm 2 at other.
+
+            // Overwriting the previous "Perspective" draw code with "Cross Section" draw code.
+            // It matches the prompt "Draw dynamic Green Arrows on the coil arms showing Up/Down force".
+
+            ctx.restore(); // Undo prev transform
+
+            // NEW DRAW: CROSS SECTION
+            ctx.save();
+            ctx.translate(cx, cy);
+
+            // Rotate the whole rotor assembly
+            ctx.rotate(ANGLE);
+
+            // The Coil Frame (Iron Core + Copper)
+            // Draw a central circle (Core)
+            ctx.fillStyle = '#444';
+            ctx.beginPath(); ctx.arc(0, 0, 80, 0, Math.PI * 2); ctx.fill();
+
+            // Draw Slots/Windings
+            // Two main slots opposite each other
+            ctx.fillStyle = '#b87333'; // Copper
+            ctx.beginPath(); ctx.arc(0, -70, 15, 0, Math.PI * 2); ctx.fill(); // Top Arm
+            ctx.beginPath(); ctx.arc(0, 70, 15, 0, Math.PI * 2); ctx.fill(); // Bottom Arm
+
+            // Electron Direction indicators (In/Out)
+            // Use Dot (.) and Cross (x)
+            ctx.fillStyle = '#fff'; font = '20px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+            // Determine Direction based on Commutator
+            // If ANGLE is 0..180, Top is "Left" side?
+            // Just use CURRENT_I sign relative to coil frame.
+
+            // Simple visual: Top is Dot, Bottom is Cross.
+            // Flip if Current < 0.
+
+            let topSym = "•"; let botSym = "×";
+            // If Commutator logic works, I flips sign every 180.
+            // So physically, the wire at "Top" (Space) always has same current direction?
+            // Yes, that's what commutator does.
+            // So we draw symptoms based on WORLD Y not Local Y.
+
+            ctx.restore(); // Back to world space to draw arrows? 
+            // No, keep local, but Logic handles flipping.
+
+            // Re-save for rotor local
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(ANGLE);
+
+            // Draw Symbols
+            // Actually, if I flips, the symbols flip in Local Space.
+            // Let's assume Top Arm (Local) has I > 0.
+            if (CURRENT_I < 0) { topSym = "×"; botSym = "•"; }
+
+            ctx.fillStyle = '#fff';
+            ctx.fillText(topSym, 0, -70);
+            ctx.fillText(botSym, 0, 70);
+
+            // 4. FORCE VECTORS (Green Arrows)
+            if (SHOW_VECTORS && Math.abs(CURRENT_I) > 0.1) {
+                // F = I x B.
+                // Arms are at (0, -70) and (0, 70).
+                // B is (1, 0) [Right].
+                // Top Arm: I is Out (-Z)? Or In (+Z)?
+                // Let's say Dot is Out (-Z).
+                // F = (-Z) x (X) = -Y (Down).
+                // Cross is In (+Z). F = (+Z) x (X) = +Y (Up).
+
+                // So Dot side pushed Down? Cross side pushed Up.
+                // Creates Torque.
+
+                // We draw vectors in LOCAL space or WORLD space?
+                // Force is World Space typically (Up/Down).
+                // It acts on the arm.
+
+                // Vector Magnitude
+                const vecLen = Math.abs(CURRENT_I * FIELD_B * 15);
+
+                // Top Arm Force
+                ctx.save();
+                ctx.translate(0, -70); // At Top Arm
+                ctx.rotate(-ANGLE); // Undo Rotation to align with World? 
+                // No, Force direction is constant UP or DOWN in World Y (mostly)?
+                // Lorentz Force F is perp to B and I.
+                // I is Z-axis. B is X-axis.
+                // So F is ALWAYS Y-axis (Vertical).
+                // YES! In this view, Force is always Vertical.
+                // This produces torque = F * r * sin(theta).
+
+                // Direction:
+                // If Dot (Out): F Down.
+                // If Cross (In): F Up.
+
+                const topIsDot = (topSym === "•");
+                const topDir = topIsDot ? 1 : -1; // 1 = Down?? Wait. 
+                // Out x Right = Down. Correct. (Right Hand Rule).
+                // Index(I out), Middle(B right), Thumb(Force)... Down?
+                // Wait, I Out (Towards me). B Right. F Up?
+                // Hand: Fingers B. Thumb I. Palm F.
+                // I (Thumb) Out. B (Fingers) Right. Palm Up.
+                // So Dot = Up. Cross = Down.
+
+                // Draw Top Vector
+                drawVector(0, 0, 0, (topIsDot ? -1 : 1) * vecLen, '#10b981');
+
+                ctx.restore();
+
+                // Bottom Arm Force
+                ctx.save();
+                ctx.translate(0, 70);
+                ctx.rotate(-ANGLE);
+                const botIsDot = (botSym === "•");
+                drawVector(0, 0, 0, (botIsDot ? -1 : 1) * vecLen, '#10b981');
+                ctx.restore();
+            }
+
+            ctx.restore(); // End Rotor
+
+            // 5. COMMUTATOR (Center)
+            // Split ring.
+            ctx.fillStyle = '#f59e0b';
+            ctx.beginPath(); ctx.arc(cx, cy, 30, ANGLE + 0.2, ANGLE + Math.PI - 0.2); ctx.fill();
+            ctx.fillStyle = '#f59e0b';
+            ctx.beginPath(); ctx.arc(cx, cy, 30, ANGLE + Math.PI + 0.2, ANGLE + Math.PI * 2 - 0.2); ctx.fill();
+
+            // Brushes (Static)
+            ctx.fillStyle = '#888';
+            ctx.fillRect(cx - 35, cy - 10, 10, 20); // Left Brush
+            ctx.fillRect(cx + 25, cy - 10, 10, 20); // Right Brush
+
+            // Sparks
+            SPARKS.forEach(s => {
+                ctx.fillStyle = `rgba(255, 255, 200, ${s.life / 20})`;
+                ctx.beginPath(); ctx.arc(s.x, s.y, 2, 0, Math.PI * 2); ctx.fill();
+            });
+        }
+
+        function drawVector(x, y, dx, dy, color) {
+            ctx.strokeStyle = color;
+            ctx.fillStyle = color;
+            ctx.lineWidth = 4;
+
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + dx, y + dy);
+            ctx.stroke();
+
+            // Arrowhead
+            const ang = Math.atan2(dy, dx);
+            ctx.beginPath();
+            ctx.moveTo(x + dx, y + dy);
+            ctx.lineTo(x + dx - 10 * Math.cos(ang - 0.5), y + dy - 10 * Math.sin(ang - 0.5));
+            ctx.lineTo(x + dx - 10 * Math.cos(ang + 0.5), y + dy - 10 * Math.sin(ang + 0.5));
+            ctx.fill();
+        }
+
+        // Loop
+        function loop() {
+            updatePhysics();
+            render();
+            requestAnimationFrame(loop);
+        }
+
+        init();
+
+    </script>
+</body>
+
+</html>

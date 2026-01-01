@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Acoustic Physics Engine</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Orbitron', sans-serif;
+            color: #fff;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .hud {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 200px;
+            background: linear-gradient(to top, #111, transparent);
+            display: flex;
+            justify-content: center;
+            align-items: end;
+            padding-bottom: 30px;
+            gap: 40px;
+            pointer-events: none;
+        }
+
+        .control-panel {
+            pointer-events: auto;
+            background: rgba(20, 20, 20, 0.9);
+            border: 1px solid #333;
+            padding: 20px;
+            border-radius: 10px;
+            width: 300px;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.1);
+        }
+
+        .slider-group {
+            margin-bottom: 15px;
+        }
+
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #aaa;
+            margin-bottom: 5px;
+        }
+
+        input[type=range] {
+            width: 100%;
+            accent-color: #00e0ff;
+            cursor: pointer;
+        }
+
+        .medium-select {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .medium-btn {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #444;
+            background: #222;
+            color: #888;
+            cursor: pointer;
+            font-size: 10px;
+            text-transform: uppercase;
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        .medium-btn.active {
+            background: #00e0ff;
+            color: #000;
+            border-color: #00e0ff;
+            box-shadow: 0 0 15px #00e0ff;
+        }
+
+        #speaker-area {
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            width: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+
+        /* Speaker Cone Animation handled by JS for sync */
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div id="speaker-area"></div>
+
+    <div class="hud">
+        <div class="control-panel">
+            <h2 class="text-cyan-400 text-sm mb-4 tracking-widest border-b border-gray-700 pb-2">OSCILLATOR DECK</h2>
+
+            <div class="slider-group">
+                <div class="slider-label"><span>FREQUENCY (Hz)</span><span id="freq-val">5 Hz</span></div>
+                <input type="range" id="freq" min="1" max="20" value="5" step="1">
+            </div>
+
+            <div class="slider-group">
+                <div class="slider-label"><span>AMPLITUDE (dB)</span><span id="amp-val">80%</span></div>
+                <input type="range" id="amp" min="0" max="100" value="80">
+            </div>
+
+            <div class="medium-select">
+                <div class="medium-btn active" onclick="setMedium('air')">AIR</div>
+                <div class="medium-btn" onclick="setMedium('water')">WATER</div>
+                <div class="medium-btn" onclick="setMedium('solid')">SOLID</div>
+            </div>
+        </div>
+
+        <div class="control-panel">
+            <h2 class="text-purple-400 text-sm mb-4 tracking-widest border-b border-gray-700 pb-2">SENSOR READINGS</h2>
+            <div class="flex justify-between text-xs text-gray-400 mb-2">
+                <span>PRESSURE</span>
+                <span id="p-read">101.3 kPa</span>
+            </div>
+            <canvas id="scope" width="260" height="80" style="background:#000; border:1px solid #333;"></canvas>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * ACOUSTIC PHYSICS ENGINE
+         * Uses a 1D spring-mass lattice mapped to 2D particles for visualization.
+         * The wave propagates through "slices" of the medium.
+         */
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const scope = document.getElementById('scope');
+        const sCtx = scope.getContext('2d');
+
+        let width, height;
+
+        // --- CONFIG ---
+        const PARAMS = {
+            freq: 5,
+            amp: 80,
+            medium: 'air' // air, water, solid
+        };
+
+        // --- PHYSICS STATE ---
+        // We model the medium as vertical columns (slices) connected by springs.
+        // Each column has a displacement X from its rest position.
+        const SLICE_WIDTH = 20;
+        let SLICES = []; // { x, v, f }
+
+        // Particles for visualization
+        // 2000+ particles
+        const PARTICLE_COUNT = 2500;
+        let PARTICLES = []; // { x, y, sliceIndex, type }
+
+        // Medium Properties
+        const MEDIUMS = {
+            air: { k: 0.1, damp: 0.98, color: '#60a5fa', density: 1 },
+            water: { k: 0.3, damp: 0.96, color: '#22d3ee', density: 2 },
+            solid: { k: 0.9, damp: 0.90, color: '#a3e635', density: 4 }
+        };
+        let CURRENT_MAT = MEDIUMS.air;
+
+        // Speaker
+        let SPEAKER_PHASE = 0;
+        let CONE_X = 0;
+
+        // UI Refs
+        const freqSlider = document.getElementById('freq');
+        const ampSlider = document.getElementById('amp');
+        const freqVal = document.getElementById('freq-val');
+        const ampVal = document.getElementById('amp-val');
+        const pRead = document.getElementById('p-read');
+
+        // --- INIT ---
+        function init() {
+            resize();
+            inputListeners();
+        }
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+
+            // Init Slices
+            SLICES = [];
+            const numSlices = Math.ceil(width / SLICE_WIDTH) + 2;
+            for (let i = 0; i < numSlices; i++) {
+                SLICES.push({ x: 0, v: 0, f: 0, BaseX: i * SLICE_WIDTH });
+            }
+
+            // Init Particles
+            PARTICLES = [];
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                // Random position
+                const sx = Math.random() * width;
+                const sy = Math.random() * height;
+
+                // Assign to nearest slice for physics driving
+                // Particle X = BaseX + Slice_Displacement + Random_Jitter
+                const sliceIdx = Math.floor(sx / SLICE_WIDTH);
+
+                PARTICLES.push({
+                    baseX: sx,
+                    y: sy,
+                    sliceIdx: Math.min(sliceIdx, SLICES.length - 1),
+                    r: Math.random() * 2 + 1,
+                    offX: (Math.random() - 0.5) * SLICE_WIDTH // Offset within slice
+                });
+            }
+        }
+        window.addEventListener('resize', resize);
+
+        function inputListeners() {
+            freqSlider.addEventListener('input', e => {
+                PARAMS.freq = parseInt(e.target.value);
+                freqVal.innerText = PARAMS.freq + " Hz";
+            });
+            ampSlider.addEventListener('input', e => {
+                PARAMS.amp = parseInt(e.target.value);
+                ampVal.innerText = PARAMS.amp + "%";
+            });
+        }
+
+        window.setMedium = (m) => {
+            PARAMS.medium = m;
+            CURRENT_MAT = MEDIUMS[m];
+            // Update UI
+            document.querySelectorAll('.medium-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+        };
+
+        // --- PHYSICS LOOP ---
+        function update() {
+            // 1. Speaker Driver (Left boundary)
+            const time = Date.now() / 1000;
+            // Source driven by sine wave
+            // Amp 0-100 -> Displacement pixels
+            const drivingForce = Math.sin(time * PARAMS.freq * 2 * Math.PI) * (PARAMS.amp * 1.5);
+
+            CONE_X = drivingForce;
+
+            // Apply to first few slices
+            SLICES[0].x = drivingForce;
+            SLICES[0].v = 0; // Driven hard
+
+            // 2. Propagate (Wave Equation / Spring Lattice)
+            // F = -k * dx
+            const k = CURRENT_MAT.k;
+            const damp = CURRENT_MAT.damp;
+
+            for (let i = 1; i < SLICES.length - 1; i++) {
+                const s = SLICES[i];
+                const left = SLICES[i - 1];
+                const right = SLICES[i + 1];
+
+                // Forces from neighbors
+                // Displacement diff
+                const dLeft = left.x - s.x;
+                const dRight = right.x - s.x;
+
+                // Acceleration
+                const a = (dLeft * k + dRight * k);
+
+                s.v += a;
+                s.v *= damp;
+                s.x += s.v;
+            }
+
+            // Boundary (Right) - Absorbing or Reflecting?
+            // Simple absorbing: damp last slice heavily
+            const last = SLICES[SLICES.length - 1];
+            last.v *= 0.5;
+            last.x *= 0.5;
+
+            // 3. Update Sensing (Microphone at 80% width)
+            const micIdx = Math.floor((width * 0.8) / SLICE_WIDTH);
+            if (micIdx < SLICES.length) {
+                const pressure = SLICES[micIdx].x; // Displacement approx pressure locally (actually gradient is pressure)
+                // Pressure = - bulkModulus * strain. Strain ~ adjacent diff.
+                const strain = SLICES[micIdx].x - SLICES[micIdx + 1].x;
+                drawScope(strain * 5); // Amplify for visual
+
+                // Update text
+                const kpa = 101.3 + (strain * 0.1);
+                pRead.innerText = kpa.toFixed(2) + " kPa";
+            }
+        }
+
+        // --- RENDER LOOP ---
+        let scopeData = new Array(100).fill(0);
+        function drawScope(val) {
+            scopeData.push(val);
+            scopeData.shift();
+
+            sCtx.fillStyle = '#000';
+            sCtx.fillRect(0, 0, 260, 80);
+
+            sCtx.strokeStyle = '#a855f7';
+            sCtx.lineWidth = 2;
+            sCtx.beginPath();
+            for (let i = 0; i < scopeData.length; i++) {
+                const x = (i / 100) * 260;
+                const y = 40 - scopeData[i];
+                if (i === 0) sCtx.moveTo(x, y);
+                else sCtx.lineTo(x, y);
+            }
+            sCtx.stroke();
+        }
+
+        function render() {
+            ctx.fillStyle = '#111';
+            ctx.fillRect(0, 0, width, height);
+
+            // 1. Draw Speaker
+            // Box
+            ctx.fillStyle = '#222';
+            ctx.fillRect(0, height / 2 - 150, 100, 300);
+            // Cone Frame
+            ctx.strokeStyle = '#444'; ctx.lineWidth = 10;
+            ctx.beginPath(); ctx.ellipse(100, height / 2, 20, 120, 0, 0, Math.PI * 2); ctx.stroke();
+            // Cone (Moving)
+            ctx.fillStyle = '#333';
+            // Deforms based on CONE_X
+            ctx.beginPath();
+            ctx.moveTo(100 + CONE_X, height / 2 - 110);
+            ctx.lineTo(20 + CONE_X, height / 2 - 40);
+            ctx.lineTo(20 + CONE_X, height / 2 + 40);
+            ctx.lineTo(100 + CONE_X, height / 2 + 110);
+            ctx.fill();
+            // Cap
+            ctx.fillStyle = '#111';
+            ctx.beginPath(); ctx.ellipse(100 + CONE_X, height / 2, 10, 60, 0, 0, Math.PI * 2); ctx.fill();
+
+
+            // 2. Draw Particles (The Medium)
+            ctx.fillStyle = CURRENT_MAT.color;
+
+            PARTICLES.forEach(p => {
+                const slice = SLICES[p.sliceIdx];
+                if (!slice) return;
+
+                // Final Position = Rest Position + Wave Displacement
+                // Rest Position = p.baseX
+
+                // Visual Trick: The particle shouldn't just move X. 
+                // Longitudinal wave: Particles oscillate around equilibrium.
+
+                const simX = p.baseX + slice.x + p.offX * 0.1; // Add noise
+
+                const size = p.r * (1 + Math.abs(slice.v) * 0.1); // Pulse size slightly
+
+                // Opacity based on density (Compressions are brighter)
+                // Density ~ 1 / distance between slices?
+
+                // Color Logic
+                // Compression (slices closer) -> Brighter
+                // Rarefaction (slices far) -> Dimmer
+                // Calc strain roughly
+                const nextS = SLICES[p.sliceIdx + 1] || slice;
+                const strain = slice.x - nextS.x; // + means compression?
+                // Actually if Left pushes Right, they get closer.
+
+                ctx.globalAlpha = 0.3 + (strain * 0.05);
+                if (ctx.globalAlpha < 0.1) ctx.globalAlpha = 0.1;
+                if (ctx.globalAlpha > 1) ctx.globalAlpha = 1;
+
+                ctx.beginPath();
+                ctx.arc(simX, p.y, size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.globalAlpha = 1;
+
+            // 3. Draw Ear Sensor
+            const ex = width * 0.8;
+            const ey = height / 2;
+
+            // Base
+            ctx.fillStyle = '#222';
+            ctx.beginPath(); ctx.arc(ex, ey, 50, 0, Math.PI * 2); ctx.fill();
+
+            // Eardrum (Vibrates)
+            const micIdx = Math.floor((width * 0.8) / SLICE_WIDTH);
+            const micDisp = SLICES[micIdx] ? SLICES[micIdx].x : 0;
+
+            ctx.fillStyle = '#a855f7';
+            ctx.beginPath(); ctx.ellipse(ex, ey, 10 + micDisp * 0.2, 40, 0, 0, Math.PI * 2); ctx.fill();
+
+            // Wiring
+            ctx.strokeStyle = '#555'; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(ex, ey + 50); ctx.lineTo(ex, height); ctx.stroke();
+
+            requestAnimationFrame(renderLoop);
+        }
+
+        function renderLoop() {
+            update();
+            render();
+        }
+
+        init();
+        renderLoop();
+
+    </script>
+</body>
+
+</html>

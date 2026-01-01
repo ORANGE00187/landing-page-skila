@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Compass Explorer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #86efac;
+            font-family: 'Fredoka', sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .compass-ui {
+            position: absolute;
+            bottom: 40px;
+            right: 40px;
+            width: 150px;
+            height: 150px;
+            background: white;
+            border-radius: 50%;
+            border: 8px solid #facc15;
+            box-shadow: 0 10px 0 rgba(0, 0, 0, 0.1);
+        }
+
+        .btn {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background: #e5e5e5;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .btn:hover {
+            background: #facc15;
+        }
+
+        .n {
+            top: 10px;
+            left: 55px;
+        }
+
+        .s {
+            bottom: 10px;
+            left: 55px;
+        }
+
+        .e {
+            right: 10px;
+            top: 55px;
+        }
+
+        .w {
+            left: 10px;
+            top: 55px;
+        }
+
+        .needle {
+            position: absolute;
+            top: 75px;
+            left: 75px;
+            width: 60px;
+            height: 6px;
+            background: red;
+            transform-origin: left center;
+            transform: rotate(-90deg);
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="compass-ui">
+        <div class="btn n" onclick="move('N')">N</div>
+        <div class="btn s" onclick="move('S')">S</div>
+        <div class="btn e" onclick="move('E')">E</div>
+        <div class="btn w" onclick="move('W')">W</div>
+        <div class="needle" id="needle"></div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const needle = document.getElementById('needle');
+
+        let width, height;
+        let PLAYER = { x: 0, y: 0 }; // Grid Coords
+        let TRAIL = []; // History
+
+        // Isometric Logic:
+        // xIso = (x - y) * TILE_W
+        // yIso = (x + y) * TILE_H
+        const TILE = 40;
+        const OFFSET_X = 500;
+        const OFFSET_Y = 200;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            OFFSET_X = width / 2;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function toIso(x, y) {
+            return {
+                x: OFFSET_X + (x - y) * TILE,
+                y: OFFSET_Y + (x + y) * (TILE / 2)
+            };
+        }
+
+        window.move = (dir) => {
+            TRAIL.push({ ...PLAYER });
+            if (dir === 'N') { PLAYER.y -= 1; needle.style.transform = 'rotate(-90deg)'; } // North in ISO is UP-RIGHT? No, map coords.
+            // Let's define Map Coords: N is -Y. S is +Y. E is +X. W is -X.
+            // Wait, Standard cartesian.
+            // Up is -Y. Right is +X.
+
+            if (dir === 'S') { PLAYER.y += 1; needle.style.transform = 'rotate(90deg)'; }
+            if (dir === 'E') { PLAYER.x += 1; needle.style.transform = 'rotate(0deg)'; }
+            if (dir === 'W') { PLAYER.x -= 1; needle.style.transform = 'rotate(180deg)'; }
+        };
+
+        // Draw World
+        function loop() {
+            ctx.fillStyle = '#86efac';
+            ctx.fillRect(0, 0, width, height);
+
+            // Grid
+            for (let y = -5; y <= 5; y++) {
+                for (let x = -5; x <= 5; x++) {
+                    const p = toIso(x, y);
+                    // Draw Tile
+                    ctx.fillStyle = ((x + y) % 2 === 0) ? '#4ade80' : '#22c55e';
+                    ctx.beginPath();
+                    ctx.moveTo(p.x, p.y);
+                    ctx.lineTo(p.x + TILE, p.y + TILE / 2);
+                    ctx.lineTo(p.x, p.y + TILE);
+                    ctx.lineTo(p.x - TILE, p.y + TILE / 2);
+                    ctx.fill();
+                }
+            }
+
+            // Buildings (Simple Cubes)
+            drawBuilding(3, -3, '#fca5a5'); // School
+            drawBuilding(-2, 2, '#93c5fd'); // Home
+
+            // Trail
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 4; ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            if (TRAIL.length > 0) {
+                let start = toIso(TRAIL[0].x, TRAIL[0].y);
+                ctx.moveTo(start.x, start.y);
+                TRAIL.forEach(t => {
+                    let pt = toIso(t.x, t.y);
+                    ctx.lineTo(pt.x, pt.y);
+                });
+                let curr = toIso(PLAYER.x, PLAYER.y);
+                ctx.lineTo(curr.x, curr.y);
+                ctx.stroke();
+            }
+            ctx.setLineDash([]);
+
+            // Player (Car)
+            const pc = toIso(PLAYER.x, PLAYER.y);
+            ctx.fillStyle = '#facc15';
+            ctx.fillRect(pc.x - 10, pc.y - 30, 20, 20); // Body
+
+            requestAnimationFrame(loop);
+        }
+
+        function drawBuilding(bx, by, color) {
+            const p = toIso(bx, by);
+            // Height
+            const h = 40;
+            ctx.fillStyle = color;
+            // Face Top
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y - h);
+            ctx.lineTo(p.x + TILE, p.y + TILE / 2 - h);
+            ctx.lineTo(p.x, p.y + TILE - h);
+            ctx.lineTo(p.x - TILE, p.y + TILE / 2 - h);
+            ctx.fill();
+
+            // Side L
+            ctx.fillStyle = 'rgba(0,0,0,0.1)';
+            ctx.beginPath();
+            ctx.moveTo(p.x - TILE, p.y + TILE / 2 - h);
+            ctx.lineTo(p.x, p.y + TILE - h);
+            ctx.lineTo(p.x, p.y + TILE);
+            ctx.lineTo(p.x - TILE, p.y + TILE / 2);
+            ctx.fill();
+
+            // Side R
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y + TILE - h);
+            ctx.lineTo(p.x + TILE, p.y + TILE / 2 - h);
+            ctx.lineTo(p.x + TILE, p.y + TILE / 2);
+            ctx.lineTo(p.x, p.y + TILE);
+            ctx.fill();
+        }
+
+        loop();
+
+    </script>
+</body>
+
+</html>

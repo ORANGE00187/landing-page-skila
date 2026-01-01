@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | The Heredity Garden</title>
+    <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Lato:wght@400;700&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #eef2ff;
+            font-family: 'Lato', sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .ui-panel {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px 40px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        h1 {
+            font-family: 'Dancing Script', cursive;
+            font-size: 32px;
+            color: #4338ca;
+            margin-bottom: 10px;
+        }
+
+        .gene-pool {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin-top: 10px;
+        }
+
+        .gene-token {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            font-size: 20px;
+            color: #fff;
+            cursor: grab;
+            user-select: none;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            transition: transform 0.1s;
+        }
+
+        .gene-token:active {
+            transform: scale(0.9);
+            cursor: grabbing;
+        }
+
+        .dom {
+            background: linear-gradient(135deg, #ef4444, #b91c1c);
+        }
+
+        /* R */
+        .rec {
+            background: linear-gradient(135deg, #cbd5e1, #94a3b8);
+        }
+
+        /* r */
+
+        #btn-breed {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 15px 40px;
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 50px;
+            font-weight: bold;
+            font-size: 20px;
+            cursor: pointer;
+            box-shadow: 0 5px 20px rgba(16, 185, 129, 0.4);
+            transition: all 0.2s;
+        }
+
+        #btn-breed:hover {
+            transform: translateX(-50%) scale(1.05);
+            background: #059669;
+        }
+
+        .stats {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            width: 200px;
+            font-size: 14px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+
+        .bar-con {
+            width: 100%;
+            height: 8px;
+            background: #eee;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+
+        .bar-fill {
+            height: 100%;
+            background: #4338ca;
+            width: 0%;
+            transition: width 0.5s;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="ui-panel">
+        <h1>Mendelian Garden</h1>
+        <div style="color:#666; margin-bottom:10px;">Drag Genes to Parents</div>
+        <div class="gene-pool">
+            <div class="gene-token dom" draggable="true" id="drag-R">R</div>
+            <div class="gene-token rec" draggable="true" id="drag-r">r</div>
+        </div>
+    </div>
+
+    <div class="stats">
+        <div class="stat-row"><span>RED (Dom)</span><span id="pct-red">0%</span></div>
+        <div class="bar-con">
+            <div class="bar-fill" id="bar-red" style="background:#ef4444"></div>
+        </div>
+
+        <div class="stat-row"><span>WHITE (Rec)</span><span id="pct-white">0%</span></div>
+        <div class="bar-con">
+            <div class="bar-fill" id="bar-white" style="background:#cbd5e1"></div>
+        </div>
+    </div>
+
+    <button id="btn-breed" onclick="breed()">POLLINATE</button>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+
+        // --- LOGIC ---
+        // Parents
+        let P1 = { allele1: null, allele2: null, x: 0, y: 0, flower: null };
+        let P2 = { allele1: null, allele2: null, x: 0, y: 0, flower: null };
+
+        // Offspring (4 slots for Punnett Square visualization)
+        let OFFSPRING = []; // { allele1, allele2, x, y, flower }
+
+        // Drag State
+        let DRAGGING = null;
+        let MOUSE = { x: 0, y: 0 };
+
+        // --- INIT ---
+        function init() {
+            resize();
+
+            // Initial Genes
+            setP1('R', 'r');
+            setP2('R', 'r');
+
+            // Drag Listeners
+            document.querySelectorAll('.gene-token').forEach(el => {
+                el.addEventListener('dragstart', e => {
+                    DRAGGING = el.innerText;
+                    e.dataTransfer.setDragImage(new Image(), 0, 0);
+                });
+                el.addEventListener('touchstart', e => DRAGGING = el.innerText);
+            });
+            window.addEventListener('dragover', e => { e.preventDefault(); MOUSE.x = e.clientX; MOUSE.y = e.clientY; });
+            window.addEventListener('drop', handleDrop);
+            window.addEventListener('touchend', handleDrop);
+            window.addEventListener('touchmove', e => { MOUSE.x = e.touches[0].clientX; MOUSE.y = e.touches[0].clientY; });
+
+            loop();
+        }
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+
+            // Layout
+            P1.x = width * 0.2; P1.y = height * 0.4;
+            P2.x = width * 0.8; P2.y = height * 0.4;
+
+            // Init Offspring Slots in Canvas Center grid
+            OFFSPRING = [];
+            const cx = width / 2;
+            const cy = height * 0.65;
+            const gap = 150;
+            OFFSPRING.push({ x: cx - gap, y: cy - gap / 2, a1: null, a2: null, flower: null }); // TL
+            OFFSPRING.push({ x: cx + gap, y: cy - gap / 2, a1: null, a2: null, flower: null }); // TR
+            OFFSPRING.push({ x: cx - gap, y: cy + gap / 2, a1: null, a2: null, flower: null }); // BL
+            OFFSPRING.push({ x: cx + gap, y: cy + gap / 2, a1: null, a2: null, flower: null }); // BR
+
+            // Update Plants
+            if (P1.flower) regrowFlower(P1);
+            if (P2.flower) regrowFlower(P2);
+        }
+        window.addEventListener('resize', resize);
+
+        function setP1(a1, a2) { P1.allele1 = a1; P1.allele2 = a2; P1.flower = createFlower(a1, a2); }
+        function setP2(a1, a2) { P2.allele1 = a1; P2.allele2 = a2; P2.flower = createFlower(a1, a2); }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            if (!DRAGGING) return;
+
+            // Check Hit P1 or P2 zones
+            // Slots: P1 Left, P1 Right, P2 Left, P2 Right
+            const slots = [
+                { p: P1, idx: 1, x: P1.x - 30, y: P1.y + 100 },
+                { p: P1, idx: 2, x: P1.x + 30, y: P1.y + 100 },
+                { p: P2, idx: 1, x: P2.x - 30, y: P2.y + 100 },
+                { p: P2, idx: 2, x: P2.x + 30, y: P2.y + 100 },
+            ];
+
+            let hit = false;
+            slots.forEach(s => {
+                const d = Math.hypot(MOUSE.x - s.x, MOUSE.y - s.y);
+                if (d < 40) {
+                    if (s.idx === 1) s.p.allele1 = DRAGGING;
+                    else s.p.allele2 = DRAGGING;
+                    // Regrow parent
+                    s.p.flower = createFlower(s.p.allele1, s.p.allele2);
+                    hit = true;
+                    // Clear offspring
+                    OFFSPRING.forEach(o => { o.flower = null; o.a1 = null; o.a2 = null; });
+                    updateStats();
+                }
+            });
+
+            DRAGGING = null;
+        }
+
+        // --- FLOWER GENERATION (Procedural L-System style) ---
+        function createFlower(a1, a2) {
+            // Phenotype
+            // R is dominant. if includes 'R' -> RED. else -> WHITE.
+            const isRed = (a1 === 'R' || a2 === 'R');
+            const color = isRed ? '#ef4444' : '#f8fafc';
+
+            // Structure
+            // Random variation but deterministic based on genes?
+            // Let's just make it simple beautiful curve.
+            return {
+                color: color,
+                height: 100 + Math.random() * 50, // Tall/Short trait?
+                growth: 0, // Animation state
+                petals: 5 + Math.floor(Math.random() * 3),
+                points: [] // Calculated Bezier points
+            };
+        }
+
+        function regrowFlower(p) {
+            p.flower = createFlower(p.allele1, p.allele2);
+            p.flower.growth = 1.0;
+        }
+
+        function breed() {
+            // Punnett Logic: 2x2 grid
+            // P1 [a1, a2] x P2 [a1, a2]
+            // OFF[0] = P1.a1 + P2.a1
+            // OFF[1] = P1.a2 + P2.a1 (Order: P1 Left + P2 Left? )
+            // Standard Punnett:
+            //      P2.a1   P2.a2
+            // P1.a1  1,1    1,2
+            // P1.a2  2,1    2,2
+
+            const p1g = [P1.allele1, P1.allele2];
+            const p2g = [P2.allele1, P2.allele2];
+
+            let idx = 0;
+            // Rows P1, Cols P2
+            for (let r = 0; r < 2; r++) {
+                for (let c = 0; c < 2; c++) { // Wait, Punnett mapping
+                    // OFF 0 (TL) = P1[0], P2[0]
+                    // OFF 1 (TR) = P1[0], P2[1]
+                    // OFF 2 (BL) = P1[1], P2[0]
+                    // OFF 3 (BR) = P1[1], P2[1]
+
+                    // My layout:
+                    // 0 1
+                    // 2 3
+
+                    const g1 = p1g[r];
+                    const g2 = p2g[c];
+
+                    const o = OFFSPRING[idx];
+                    o.a1 = g1;
+                    o.a2 = g2;
+                    o.flower = createFlower(g1, g2);
+                    o.flower.growth = 0; // Animate grow
+
+                    idx++;
+                }
+            }
+
+            updateStats();
+        }
+
+        function updateStats() {
+            // Count current offspring potential
+            const p1g = [P1.allele1, P1.allele2];
+            const p2g = [P2.allele1, P2.allele2];
+
+            let red = 0; let white = 0;
+            for (let r of p1g) {
+                for (let c of p2g) {
+                    if (r === 'R' || c === 'R') red++; else white++;
+                }
+            }
+
+            const pctR = (red / 4) * 100;
+            const pctW = (white / 4) * 100;
+
+            document.getElementById('pct-red').innerText = pctR + "%";
+            document.getElementById('pct-white').innerText = pctW + "%";
+            document.getElementById('bar-red').style.width = pctR + "%";
+            document.getElementById('bar-white').style.width = pctW + "%";
+        }
+
+        // --- LOOP ---
+        function loop() {
+            // Render
+            ctx.fillStyle = '#eef2ff';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw Ground / Pots
+            drawPot(P1.x, P1.y);
+            drawPot(P2.x, P2.y);
+
+            OFFSPRING.forEach(o => drawPot(o.x, o.y));
+
+            // Draw Plants
+            drawPlant(P1.x, P1.y, P1.flower);
+            drawPlant(P2.x, P2.y, P2.flower);
+            OFFSPRING.forEach(o => drawPlant(o.x, o.y, o.flower));
+
+            // Draw Gene Labels
+            drawGeneLabel(P1.x - 30, P1.y + 100, P1.allele1);
+            drawGeneLabel(P1.x + 30, P1.y + 100, P1.allele2);
+
+            drawGeneLabel(P2.x - 30, P2.y + 100, P2.allele1);
+            drawGeneLabel(P2.x + 30, P2.y + 100, P2.allele2);
+
+            OFFSPRING.forEach(o => {
+                if (o.a1) {
+                    drawGeneLabel(o.x - 15, o.y + 80, o.a1, 0.7);
+                    drawGeneLabel(o.x + 15, o.y + 80, o.a2, 0.7);
+                }
+            });
+
+            // Pollen Animation?
+
+            // Update Growth
+            if (P1.flower && P1.flower.growth < 1) P1.flower.growth += 0.05;
+            if (P2.flower && P2.flower.growth < 1) P2.flower.growth += 0.05;
+            OFFSPRING.forEach(o => { if (o.flower && o.flower.growth < 1) o.flower.growth += 0.02; });
+
+            // Draw Dragging
+            if (DRAGGING) {
+                const isDom = DRAGGING === 'R';
+                const col = isDom ? '#ef4444' : '#cbd5e1';
+                ctx.fillStyle = col;
+                ctx.beginPath(); ctx.arc(MOUSE.x, MOUSE.y, 25, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.font = '20px Lato'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(DRAGGING, MOUSE.x, MOUSE.y);
+            }
+
+            requestAnimationFrame(loop);
+        }
+
+        function drawPot(x, y) {
+            ctx.fillStyle = '#b45309';
+            ctx.beginPath();
+            ctx.moveTo(x - 20, y + 60);
+            ctx.lineTo(x + 20, y + 60);
+            ctx.lineTo(x + 30, y + 20);
+            ctx.lineTo(x - 30, y + 20);
+            ctx.fill();
+            // Rim
+            ctx.fillStyle = '#92400e';
+            ctx.fillRect(x - 35, y + 20, 70, 10);
+        }
+
+        function drawGeneLabel(x, y, allele, scale = 1) {
+            if (!allele) {
+                // Empty slot dashed
+                ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 2; ctx.setLineDash([5, 5]);
+                ctx.beginPath(); ctx.arc(x, y, 20 * scale, 0, Math.PI * 2); ctx.stroke();
+                ctx.setLineDash([]);
+                return;
+            }
+            const isDom = allele === 'R';
+            const col = isDom ? '#ef4444' : '#cbd5e1';
+
+            ctx.fillStyle = col;
+            ctx.shadowBlur = 10; ctx.shadowColor = 'rgba(0,0,0,0.1)';
+            ctx.beginPath(); ctx.arc(x, y, 20 * scale, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 0;
+
+            ctx.fillStyle = '#fff'; ctx.font = `${20 * scale}px Lato`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(allele, x, y);
+        }
+
+        function drawPlant(x, y, f) {
+            if (!f) return;
+            const g = f.growth;
+            const h = f.height * g;
+
+            // Stem
+            ctx.strokeStyle = '#15803d'; ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(x, y + 30);
+
+            // Bezier curve for stem sway
+            const sway = Math.sin(Date.now() * 0.002 + x) * 10;
+            ctx.quadraticCurveTo(x + sway, y - h / 2, x + sway / 2, y - h);
+            ctx.stroke();
+
+            // Leaves
+            if (g > 0.3) {
+                const ly = y + 20 - h * 0.3;
+                ctx.fillStyle = '#22c55e';
+                ctx.beginPath(); ctx.ellipse(x + 10, ly, 10 * g, 5 * g, Math.PI / 4, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.ellipse(x - 10, ly + 10, 10 * g, 5 * g, -Math.PI / 4, 0, Math.PI * 2); ctx.fill();
+            }
+
+            // Flower Head
+            if (g > 0.6) {
+                const headX = x + sway / 2;
+                const headY = y - h;
+                const size = 20 * g;
+
+                // Draw Petals
+                ctx.fillStyle = f.color;
+                for (let i = 0; i < f.petals; i++) {
+                    const ang = (Math.PI * 2 / f.petals) * i + sway * 0.01;
+                    const px = headX + Math.cos(ang) * size;
+                    const py = headY + Math.sin(ang) * size;
+
+                    ctx.beginPath();
+                    ctx.arc(px, py, size / 1.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // Center
+                ctx.fillStyle = '#facc15';
+                ctx.beginPath(); ctx.arc(headX, headY, size / 2, 0, Math.PI * 2); ctx.fill();
+            }
+        }
+
+        init();
+        updateStats(); // Init 
+    </script>
+</body>
+
+</html>

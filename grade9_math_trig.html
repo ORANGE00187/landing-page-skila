@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Unit Circle Engine</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Share Tech Mono', monospace;
+            color: #eee;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+        }
+
+        /* OVERLAYS */
+        .overlay {
+            position: absolute;
+            pointer-events: none;
+        }
+
+        .value-card {
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #444;
+            padding: 10px;
+            font-size: 14px;
+            display: flex;
+            gap: 20px;
+            top: 20px;
+            left: 20px;
+        }
+
+        .func-val {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 60px;
+        }
+
+        .func-val span {
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .sin-c {
+            color: #f0f;
+        }
+
+        .cos-c {
+            color: #0ff;
+        }
+
+        .tan-c {
+            color: #ff0;
+        }
+
+        #angle-display {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 40px;
+            color: #fff;
+            text-shadow: 0 0 10px #fff;
+        }
+
+        .help-tip {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            text-align: center;
+            color: #666;
+            font-size: 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div id="angle-display">0°</div>
+
+    <div class="overlay value-card">
+        <div class="func-val sin-c">
+            <small>SIN</small>
+            <span id="v-sin">0.00</span>
+        </div>
+        <div class="func-val cos-c">
+            <small>COS</small>
+            <span id="v-cos">1.00</span>
+        </div>
+        <div class="func-val tan-c">
+            <small>TAN</small>
+            <span id="v-tan">0.00</span>
+        </div>
+    </div>
+
+    <div class="help-tip">DRAG THE DOT ON THE CIRCLE TO ROTATE</div>
+
+    <script>
+        /**
+         * UNIT CIRCLE ENGINE
+         * Real-time projection of Trig functions from circular motion to linear graphs.
+         */
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const textAngle = document.getElementById('angle-display');
+        const vSin = document.getElementById('v-sin');
+        const vCos = document.getElementById('v-cos');
+        const vTan = document.getElementById('v-tan');
+
+        let WIDTH, HEIGHT;
+        let CX, CY; // Center of Circle
+        const RADIUS = 150;
+
+        let ANGLE = 0; // Radians
+        let DRAGGING = false;
+
+        // History for Graphs
+        // We store points {t, val}
+        let HIST_SIN = [];
+        let HIST_COS = [];
+        let TIME = 0;
+
+        function resize() {
+            WIDTH = canvas.width = window.innerWidth;
+            HEIGHT = canvas.height = window.innerHeight;
+            // Layout: Circle on Left, Graphs on Right
+            CX = WIDTH * 0.25;
+            CY = HEIGHT / 2;
+        }
+        window.addEventListener('resize', resize);
+
+        // Interaction
+        canvas.addEventListener('mousedown', e => {
+            const d = Math.hypot(e.clientX - CX, e.clientY - CY);
+            // Check if near circle rim (roughly)
+            if (Math.abs(d - RADIUS) < 40) {
+                DRAGGING = true;
+                updateAngle(e.clientX, e.clientY);
+            }
+        });
+
+        window.addEventListener('mousemove', e => {
+            if (DRAGGING) {
+                updateAngle(e.clientX, e.clientY);
+            }
+        });
+
+        window.addEventListener('mouseup', () => DRAGGING = false);
+
+        function updateAngle(mx, my) {
+            ANGLE = Math.atan2(CY - my, mx - CX); // Standard Math atan2 (y is up pos usually, but screen y is down)
+            // Screen Y inverse:
+            // dy = my - CY. If my < CY (up), dy is negative.
+            // atan2(y, x). 
+            // We want 0 at right (1,0). PI/2 at top (0,-1).
+            // So y should be inverted: CY - my.
+
+            if (ANGLE < 0) ANGLE += Math.PI * 2;
+
+            updateValues();
+        }
+
+        function updateValues() {
+            const deg = Math.round(ANGLE * 180 / Math.PI);
+            textAngle.innerText = deg + "°";
+
+            const s = Math.sin(ANGLE);
+            const c = Math.cos(ANGLE);
+            const t = Math.tan(ANGLE);
+
+            vSin.innerText = s.toFixed(2);
+            vCos.innerText = c.toFixed(2);
+            vTan.innerText = (Math.abs(t) > 100 ? "INF" : t.toFixed(2));
+        }
+
+        // Loop
+        function loop() {
+            // Update History only if moving? Or continuous time scroll?
+            // "Scrolling charts". So time moves.
+            TIME -= 2; // Pixel scroll speed
+
+            // Add current point
+            // We map time to X on graph.
+            // Actually, usually graph is y = sin(x). X is angle.
+            // But here we want a strip chart.
+            // So we always push current ANGLE val to front.
+            // Wait, standard visualization:
+            // Circle Y projects to Sine Graph Y.
+            // Circle X projects to Cosine Graph Y (rotated).
+
+            // Implementation: Rolling buffer
+            HIST_SIN.unshift(Math.sin(ANGLE));
+            HIST_COS.unshift(Math.cos(ANGLE));
+            if (HIST_SIN.length > 500) { HIST_SIN.pop(); HIST_COS.pop(); }
+
+            render();
+            requestAnimationFrame(loop);
+        }
+
+        function render() {
+            // Clear
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+            // Draw Grid around Circle
+            drawGrid(CX, CY);
+
+            // 1. THE CIRCLE
+            ctx.strokeStyle = '#444';
+            ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(CX, CY, RADIUS, 0, Math.PI * 2); ctx.stroke();
+
+            // Axes
+            ctx.strokeStyle = '#666'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(CX - RADIUS - 20, CY); ctx.lineTo(CX + RADIUS + 20, CY); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(CX, CY - RADIUS - 20); ctx.lineTo(CX, CY + RADIUS + 20); ctx.stroke();
+
+            // 2. THE POINT
+            // Standard Trig: x = cos, y = sin
+            // But remember Screen Y is down.
+            // We used ANGLE = atan2(CY-my, mx-CX).
+            // So mx = CX + cos * R
+            // my = CY - sin * R
+            const px = CX + Math.cos(ANGLE) * RADIUS;
+            const py = CY - Math.sin(ANGLE) * RADIUS;
+
+            // Triangle
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.beginPath(); ctx.moveTo(CX, CY); ctx.lineTo(px, py); ctx.lineTo(px, CY); ctx.fill();
+
+            // Radius Line
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(CX, CY); ctx.lineTo(px, py); ctx.stroke();
+
+            // 3. COSINE PROJECTION (Horizontal) -> Paints measure on X axis
+            ctx.strokeStyle = '#0ff'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.moveTo(CX, CY); ctx.lineTo(px, CY); ctx.stroke();
+            // Label
+            ctx.fillStyle = '#0ff'; ctx.font = '12px monospace';
+            ctx.textAlign = 'center'; ctx.fillText("cos", (CX + px) / 2, CY + 15);
+
+            // 4. SINE PROJECTION (Vertical) -> Paints measure on Y axis?
+            // Actually usually the vertical leg of triangle
+            ctx.strokeStyle = '#f0f'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.moveTo(px, CY); ctx.lineTo(px, py); ctx.stroke();
+            // Label
+            ctx.fillStyle = '#f0f'; ctx.fillText("sin", px + 15, (CY + py) / 2);
+
+            // 5. TANGENT LINE
+            // Tangent is line touching circle at P, extending to axis.
+            // Or usually shown as vertical line at x=1 intersecting extension of radius.
+            // Let's do the "Geometric Definition": Tangent line at (1,0)
+            const tanX = CX + RADIUS; // Right edge
+            const tanY = CY - Math.tan(ANGLE) * RADIUS;
+
+            // Only draw if within bounds reasonably
+            if (Math.abs(Math.tan(ANGLE)) < 5) {
+                // Extension line from center through P to Tan point
+                ctx.strokeStyle = '#444'; ctx.setLineDash([5, 5]); ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(CX, CY); ctx.lineTo(tanX, tanY); ctx.stroke();
+
+                // The TANGENT segment (from axis to intersection)
+                ctx.strokeStyle = '#ff0'; ctx.lineWidth = 3; ctx.setLineDash([]);
+                ctx.beginPath(); ctx.moveTo(tanX, CY); ctx.lineTo(tanX, tanY); ctx.stroke();
+
+                ctx.fillStyle = '#ff0'; ctx.fillText("tan", tanX + 20, (CY + tanY) / 2);
+            }
+
+            // Point P
+            ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.fill();
+
+
+            // --- GRAPHS ON THE RIGHT ---
+
+            const gLeft = WIDTH * 0.5;
+            const gWidth = WIDTH * 0.45;
+            const gHeight = HEIGHT * 0.25;
+
+            // Sine Graph (Top)
+            const sinY = HEIGHT * 0.25;
+            drawWaveGraph(gLeft, sinY, gWidth, gHeight, HIST_SIN, '#f0f', "SINE WAVE (y)");
+
+            // Connector Laser
+            // Connect P (px, py) to the start of the graph (gLeft, current_val_y)
+            const currentSinY = sinY - Math.sin(ANGLE) * (gHeight / 2.5); // Scaled
+
+            ctx.strokeStyle = '#f0f'; ctx.lineWidth = 1; ctx.setLineDash([2, 2]);
+            ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(gLeft, currentSinY); ctx.stroke();
+
+
+            // Cosine Graph (Bottom)
+            const cosY = HEIGHT * 0.75;
+            drawWaveGraph(gLeft, cosY, gWidth, gHeight, HIST_COS, '#0ff', "COSINE WAVE (x)");
+
+            // Connector Laser?
+            // Cosine maps X. Visualizing connection is harder since chart is Y-based.
+            // Just draw it.
+
+        }
+
+        function drawWaveGraph(x, y, w, h, data, color, label) {
+            // Box
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 1; ctx.setLineDash([]);
+            ctx.strokeRect(x, y - h / 2, w, h);
+
+            // Center Line
+            ctx.strokeStyle = '#222';
+            ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.stroke();
+
+            // Wave
+            ctx.strokeStyle = color; ctx.lineWidth = 2;
+            ctx.beginPath();
+
+            const step = w / data.length; // Pixel per data point? No, data flows left to right?
+            // We want Current Value at LEFT or RIGHT?
+            // Usually "Oscilloscope" style: Current at Right? Or Left?
+            // Let's put Current at Left to match the Connector Laser.
+
+            for (let i = 0; i < data.length; i++) {
+                const val = data[i];
+                const px = x + i * 2; // 2px per history step
+                if (px > x + w) break;
+
+                // Map -1..1 to -h/2..h/2
+                // Invert Y because Screen Y
+                const py = y - val * (h / 2.5);
+
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.stroke();
+
+            // Label
+            ctx.fillStyle = color; ctx.font = '14px monospace'; ctx.textAlign = 'left';
+            ctx.fillText(label, x + 10, y - h / 2 + 20);
+        }
+
+        function drawGrid(cx, cy) {
+            ctx.strokeStyle = '#111';
+            ctx.lineWidth = 1;
+            const size = 50;
+            const count = Math.ceil(WIDTH / size);
+
+            // Draw relative to center so grid matches axis
+            // Verts
+            for (let i = -20; i <= 20; i++) {
+                ctx.beginPath(); ctx.moveTo(cx + i * size, 0); ctx.lineTo(cx + i * size, HEIGHT); ctx.stroke();
+            }
+            // Horiz
+            for (let i = -20; i <= 20; i++) {
+                ctx.beginPath(); ctx.moveTo(0, cy + i * size); ctx.lineTo(WIDTH, cy + i * size); ctx.stroke();
+            }
+        }
+
+        resize();
+        loop();
+
+    </script>
+</body>
+
+</html>

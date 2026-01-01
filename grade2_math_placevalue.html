@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Place Value Factory</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #fff;
+            font-family: 'Fredoka', sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .hud {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translate(-50%, 0);
+            background: #fff;
+            padding: 20px 40px;
+            border-radius: 20px;
+            font-size: 60px;
+            font-weight: bold;
+            color: #333;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+            display: flex;
+            gap: 40px;
+        }
+
+        .digit {
+            width: 60px;
+            text-align: center;
+        }
+
+        .green {
+            color: #10b981;
+        }
+
+        .blue {
+            color: #3b82f6;
+        }
+
+        .yellow {
+            color: #eab308;
+        }
+
+        .btn {
+            position: absolute;
+            bottom: 40px;
+            right: 40px;
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: #eab308;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 5px 0 #ca8a04;
+            transition: transform 0.1s;
+        }
+
+        .btn:active {
+            transform: translateY(5px);
+            box-shadow: none;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="hud">
+        <div class="digit green" id="h-digit">0</div>
+        <div class="digit blue" id="t-digit">0</div>
+        <div class="digit yellow" id="o-digit">0</div>
+    </div>
+
+    <div class="btn" onclick="spawnOne()">DROP<br>ONE</div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const hD = document.getElementById('h-digit');
+        const tD = document.getElementById('t-digit');
+        const oD = document.getElementById('o-digit');
+
+        let width, height;
+        let ONES = [];
+        let TENS = [];
+        let HUNDREDS = [];
+
+        // Count
+        let countH = 0;
+        let countT = 0;
+        let countO = 0;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            // Floor y
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        const TUBE_W = 100;
+        const FLOOR_Y = window.innerHeight - 100;
+
+        function spawnOne() {
+            ONES.push({ x: width - 150 + (Math.random() - 0.5) * 40, y: -50, vy: 0, r: 15 });
+            countO++;
+            checkMerge();
+        }
+
+        function checkMerge() {
+            if (countO >= 10) {
+                // Merge Animation
+                // Clear 10 ones
+                // Spawn 1 Ten
+                // This is visual trickery. In reality we just clear the array and animate a merge.
+
+                // Simpler: Just clear 10
+                ONES.splice(0, 10);
+                countO -= 10;
+
+                TENS.push({ x: width - 350 + (Math.random() - 0.5) * 20, y: -100, vy: 0, w: 30, h: 80 });
+                countT++;
+
+                if (countT >= 10) {
+                    TENS.splice(0, 10);
+                    countT -= 10;
+                    HUNDREDS.push({ x: width - 550, y: -150, vy: 0, size: 80 });
+                    countH++;
+                }
+            }
+            updateHUD();
+        }
+
+        function updateHUD() {
+            oD.innerText = countO;
+            tD.innerText = countT;
+            hD.innerText = countH;
+        }
+
+        function loop() {
+            const fy = height - 50;
+
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(0, 0, width, height);
+
+            // Tubes
+            // 1s
+            const tx1 = width - 150;
+            drawTube(tx1, fy, '#fef08a');
+            // 10s
+            const tx2 = width - 350;
+            drawTube(tx2, fy, '#bfdbfe');
+            // 100s
+            const tx3 = width - 550;
+            drawTube(tx3, fy, '#a7f3d0');
+
+            // Physics & Draw Items
+            // Ones (Yellow Marbles)
+            ONES.forEach(p => {
+                p.vy += 0.5; p.y += p.vy;
+                if (p.y > fy - p.r) { p.y = fy - p.r; p.vy *= -0.5; }
+                ctx.fillStyle = '#eab308';
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.stroke();
+            });
+
+            // Tens (Blue Bars)
+            TENS.forEach(p => {
+                p.vy += 0.5; p.y += p.vy;
+                if (p.y > fy - p.h) { p.y = fy - p.h; p.vy *= -0.2; }
+                ctx.fillStyle = '#3b82f6';
+                ctx.fillRect(p.x - p.w / 2, p.y, p.w, p.h);
+                ctx.strokeRect(p.x - p.w / 2, p.y, p.w, p.h);
+            });
+
+            // Hundreds (Green Cubes)
+            HUNDREDS.forEach(p => {
+                p.vy += 0.5; p.y += p.vy;
+                if (p.y > fy - p.size) { p.y = fy - p.size; p.vy = 0; }
+                ctx.fillStyle = '#10b981';
+                ctx.fillRect(p.x - p.size / 2, p.y, p.size, p.size);
+                ctx.strokeRect(p.x - p.size / 2, p.y, p.size, p.size);
+            });
+
+            requestAnimationFrame(loop);
+        }
+
+        function drawTube(x, bottomY, color) {
+            ctx.fillStyle = color; // transparent fill
+            ctx.save();
+            ctx.globalAlpha = 0.2;
+            ctx.fillRect(x - 50, 200, 100, bottomY - 200);
+            ctx.restore();
+
+            ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(x - 50, 200); ctx.lineTo(x - 50, bottomY); ctx.lineTo(x + 50, bottomY); ctx.lineTo(x + 50, 200);
+            ctx.stroke();
+
+            // Label
+            ctx.fillStyle = '#64748b'; ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center';
+            if (x > width - 200) ctx.fillText("Ones", x, bottomY + 30);
+            else if (x > width - 400) ctx.fillText("Tens", x, bottomY + 30);
+            else ctx.fillText("Hundreds", x, bottomY + 30);
+        }
+
+        loop();
+
+    </script>
+</body>
+
+</html>

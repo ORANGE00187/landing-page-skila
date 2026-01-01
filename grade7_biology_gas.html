@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Alveoli Diffusion</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .label {
+            position: absolute;
+            color: white;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 5px;
+            border-radius: 4px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+    <div class="label" style="top: 20px; left: 20px;">Use Mouse Wheel to Breathe</div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+
+        // Sim State
+        let BREATH = 0; // 0 to 1 (Exhale to Inhale)
+        let TARGET_BREATH = 0;
+
+        // Particles
+        let O2 = [];   // Oxygen (Blue)
+        let CO2 = [];  // Carbon (Grey)
+        let RBC = [];  // Red Blood Cells
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            init();
+        }
+        window.addEventListener('resize', resize);
+
+        function init() {
+            O2 = []; CO2 = []; RBC = [];
+            // Spawn some initial gas
+            for (let i = 0; i < 50; i++) spawnGas();
+
+            // Spawn RBC stream
+            // They move along path
+        }
+        resize();
+
+        function spawnGas() {
+            // inside alveolus
+            O2.push({ x: width * 0.3, y: height / 2 + (Math.random() - 0.5) * 200, vx: 0, vy: 0, bound: false });
+        }
+
+        // Input: Scroll
+        window.addEventListener('wheel', e => {
+            TARGET_BREATH += e.deltaY * -0.002;
+            TARGET_BREATH = Math.max(0, Math.min(1, TARGET_BREATH));
+        });
+
+        // Auto Breath if idle?
+        // setInterval(() => { if(Math.random()>0.95) TARGET_BREATH = 1 - TARGET_BREATH; }, 100);
+
+        function loop() {
+            // Smooth Breath
+            BREATH += (TARGET_BREATH - BREATH) * 0.05;
+
+            ctx.fillStyle = '#1e1b4b'; // Dark Bio Blue
+            ctx.fillRect(0, 0, width, height);
+
+            const cx = width * 0.3; const cy = height / 2;
+            const r = 150 + BREATH * 50; // Expand
+
+            // Draw Alveolus (Sac)
+            ctx.fillStyle = '#fce7f3'; // Light Pink
+            ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+
+            // Draw Capillary (Tube wrapping right side)
+            // Path: Curve from top-right to bot-right
+            const capX = cx + r + 20;
+            ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 60; ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(capX, cy - 300);
+            ctx.quadraticCurveTo(capX - 50, cy, capX, cy + 300);
+            ctx.stroke();
+
+            // Masking for Capillary Walls?
+            // Just draw RBCs inside
+
+            // Simulation Logic
+
+            // 1. RBC Flow
+            if (Math.random() > 0.9) {
+                RBC.push({ x: capX, y: cy - 350, oxy: 0, vx: 0, vy: 2 + Math.random() });
+            }
+
+            for (let i = RBC.length - 1; i >= 0; i--) {
+                let cell = RBC[i];
+                // Follow curve path
+                // Simple straight down for prototype, curved slightly
+                let dy = cell.y - cy; // -300 to 300
+                let curveX = capX - 50 * Math.cos((dy / 300) * (Math.PI / 2)); // Approx curve
+                cell.x = curveX;
+
+                cell.y += cell.vy;
+
+                // Diffusion Interaction
+                // If cell is low O2 and near Alveolus wall
+                // Attract O2
+                if (cell.oxy < 100) {
+                    // Find closest O2
+                    let o = findClosest(cell, O2);
+                    if (o && !o.bound) {
+                        // Move particle to cell
+                        let dx = cell.x - o.x; let dy = cell.y - o.y;
+                        o.x += dx * 0.1; o.y += dy * 0.1;
+                        if (Math.hypot(dx, dy) < 20) {
+                            o.bound = true;
+                            // Remove particle, boost cell oxy
+                            // Actually keep particle attached visually?
+                            // Yes, turn cell bright red
+                            cell.oxy += 20;
+                            // remove O2 from list?
+                            let idx = O2.indexOf(o);
+                            if (idx > -1) O2.splice(idx, 1);
+                        }
+                    }
+                }
+
+                // Draw Cell
+                const colorVal = Math.min(255, 100 + cell.oxy * 1.5);
+                ctx.fillStyle = `rgb(${colorVal}, 0, 0)`; // Dark red -> Bright red
+                ctx.beginPath(); ctx.ellipse(cell.x, cell.y, 15, 10, Math.PI / 4, 0, Math.PI * 2); ctx.fill();
+                // Indent
+                ctx.fillStyle = 'rgba(0,0,0,0.2)';
+                ctx.beginPath(); ctx.ellipse(cell.x, cell.y, 10, 5, Math.PI / 4, 0, Math.PI * 2); ctx.fill();
+
+                if (cell.y > height + 50) RBC.splice(i, 1);
+            }
+
+            // 2. Gas Dynamics
+            // Inhale -> Spawn O2
+            if (BREATH > 0.8 && O2.length < 100) {
+                O2.push({ x: cx + (Math.random() - 0.5) * r, y: cy + (Math.random() - 0.5) * r, vx: 0, vy: 0 });
+            }
+            // Diffusion Jitter
+            O2.forEach(p => {
+                // Brownian
+                p.x += (Math.random() - 0.5) * 4;
+                p.y += (Math.random() - 0.5) * 4;
+                // Keep in sac
+                let d = Math.hypot(p.x - cx, p.y - cy);
+                if (d > r) {
+                    // Bounce back
+                    let ang = Math.atan2(p.y - cy, p.x - cx);
+                    p.x = cx + Math.cos(ang) * r;
+                    p.y = cy + Math.sin(ang) * r;
+                }
+
+                // Chance to diffuse through membrane
+                if (d > r - 20 && p.x > cx) {
+                    // Right side -> diffuse out to capillary
+                    p.x += 2;
+                }
+
+                // Render
+                ctx.fillStyle = '#60a5fa'; // Blue O2
+                ctx.shadowBlur = 5; ctx.shadowColor = 'cyan';
+                ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fill();
+                ctx.shadowBlur = 0;
+            });
+
+            requestAnimationFrame(loop);
+        }
+
+        function findClosest(pt, list) {
+            let min = 1000; let ret = null;
+            list.forEach(p => {
+                let d = Math.hypot(pt.x - p.x, pt.y - p.y);
+                if (d < min) { min = d; ret = p; }
+            });
+            // Only if close enough to affect
+            if (min < 100) return ret;
+            return null;
+        }
+
+        loop();
+
+    </script>
+</body>
+
+</html>

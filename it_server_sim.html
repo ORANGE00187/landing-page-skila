@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IT: Distributed Systems Console</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;600&family=Orbitron:wght@400;700&display=swap');
+
+        :root {
+            --bg: #020617;
+            --panel: rgba(15, 23, 42, 0.95);
+            --neon-green: #22c55e;
+            --neon-orange: #f97316;
+            --neon-red: #ef4444;
+            --neon-blue: #3b82f6;
+            --grid: rgba(255, 255, 255, 0.05);
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: var(--bg);
+            font-family: 'Fira Code', monospace;
+            color: #e2e8f0;
+            user-select: none;
+        }
+
+        /* Isometric Grid Background */
+        body::before {
+            content: "";
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background-image:
+                linear-gradient(30deg, var(--grid) 1px, transparent 1px),
+                linear-gradient(150deg, var(--grid) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0.5;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        #ui-layer {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .hud-top {
+            display: flex;
+            justify-content: space-between;
+            pointer-events: auto;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid #334155;
+            padding: 15px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            max-width: 300px;
+        }
+
+        h1 {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--neon-blue);
+            font-size: 18px;
+            margin: 0 0 10px 0;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 5px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+
+        .val {
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .btn {
+            background: #1e293b;
+            color: #fff;
+            border: 1px solid #475569;
+            padding: 8px 12px;
+            font-family: 'Fira Code';
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 5px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .btn:hover {
+            background: #334155;
+            border-color: var(--neon-blue);
+            color: var(--neon-blue);
+        }
+
+        .btn.danger {
+            border-color: var(--neon-red);
+            color: var(--neon-red);
+        }
+
+        .btn.danger:hover {
+            background: var(--neon-red);
+            color: #fff;
+        }
+
+        .status-light {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #333;
+            display: inline-block;
+            margin-right: 5px;
+            box-shadow: 0 0 5px currentColor;
+        }
+
+        /* Server Tooltip */
+        #tooltip {
+            position: absolute;
+            display: none;
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid var(--neon-green);
+            padding: 10px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 100;
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="main-canvas"></canvas>
+
+    <div id="ui-layer">
+        <div class="hud-top">
+            <div class="panel">
+                <h1>Load Balancer</h1>
+                <div class="stat-row"><label>STRATEGY</label> <span class="val" id="lb-mode">ROUND ROBIN</span></div>
+                <div class="stat-row"><label>TOTAL REQ/s</label> <span class="val" id="rps-val">0</span></div>
+                <div class="stat-row"><label>DROPPED</label> <span class="val" id="drop-val"
+                        style="color:var(--neon-red)">0</span></div>
+
+                <div style="display:flex; gap:5px; margin-top:10px;">
+                    <button class="btn" onclick="setMode('RR')">ROUND ROBIN</button>
+                    <button class="btn" onclick="setMode('LC')">LEAST CONN</button>
+                </div>
+                <div style="display:flex; gap:5px;">
+                    <button class="btn" onclick="setMode('WEIGHTED')">WEIGHTED</button>
+                    <button class="btn danger" onclick="triggerDDoS()">DDoS FLUSH</button>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h1>Cluster Health</h1>
+                <div class="stat-row"><label>ACTIVE NODES</label> <span class="val" id="active-nodes">0</span></div>
+                <div class="stat-row"><label>AVG LOAD</label> <span class="val" id="avg-load">0%</span></div>
+                <div class="stat-row"><label>FAILURES</label> <span class="val" id="fail-val">0</span></div>
+                <div style="font-size:10px; color:#64748b; margin-top:5px;">
+                    * Click a server to triggers CHAOS MONKEY (Kill)
+                </div>
+            </div>
+        </div>
+
+        <div style="text-align: center; color: #475569; font-size: 10px;">
+            SYSTEM STATUS: <span id="sys-status" style="color:var(--neon-green)">OPERATIONAL</span>
+        </div>
+    </div>
+
+    <div id="tooltip"></div>
+
+    <script>
+        /**
+         * =================================================================================
+         *  DISTRIBUTED SYSTEMS SIMULATOR
+         *  (c) 2025 Deepmind Agentic Mode
+         *  
+         *  Load Balancing, Failover, and Request Lifecycle Visualization
+         * =================================================================================
+         */
+
+        const canvas = document.getElementById('main-canvas');
+        const ctx = canvas.getContext('2d');
+        const tooltip = document.getElementById('tooltip');
+
+        // Config
+        const CONFIG = {
+            GATEWAY_X: 150,
+            GATEWAY_Y: window.innerHeight / 2,
+            SERVER_START_X: 400,
+            SERVER_START_Y: 200,
+            GRID_W: 200,
+            GRID_H: 120,
+            MAX_QUEUE: 50,
+        };
+
+        const STATE = {
+            mode: 'RR', // RR, LC, WEIGHTED
+            servers: [],
+            packets: [],
+            dropped: 0,
+            failures: 0,
+            frame: 0,
+            ddosMode: false
+        };
+
+        // ---------------------------------------------------------------------------------
+        // CLASS: PACKET (Pooled)
+        // ---------------------------------------------------------------------------------
+        class Packet {
+            constructor() {
+                this.active = false;
+                this.x = 0; this.y = 0;
+                this.target = null;
+                this.type = 'GET'; // GET (Fast), DB (Slow)
+                this.procTime = 0;
+                this.t = 0; // Travel/Proc time
+                this.phase = 'TRAVEL'; // TRAVEL, PROCESS, DONE, DROPPED
+                this.color = '#3b82f6';
+            }
+
+            spawn(x, y, target, type) {
+                this.active = true;
+                this.x = x; this.y = y;
+                this.target = target;
+                this.type = type;
+                this.procTime = type === 'GET' ? 100 : 300;
+                this.phase = 'TRAVEL';
+                this.t = 0;
+                this.color = type === 'GET' ? '#3b82f6' : '#a855f7'; // Blue vs Purple
+            }
+
+            update() {
+                if (!this.active) return;
+
+                if (this.phase === 'TRAVEL') {
+                    // Move to server
+                    if (!this.target || this.target.state === 'DEAD') {
+                        this.phase = 'DROPPED';
+                        STATE.dropped++;
+                        return;
+                    }
+
+                    const dx = this.target.x - this.x;
+                    const dy = this.target.y - this.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist < 10) {
+                        this.phase = 'PROCESS';
+                        this.target.addRequest(this);
+                        this.t = 0;
+                    } else {
+                        this.x += dx * 0.1; // Lerp
+                        this.y += dy * 0.1;
+                    }
+                }
+                else if (this.phase === 'PROCESS') {
+                    // handled by Server orbit logic
+                    // If server dies, packet drops
+                    if (this.target.state === 'DEAD') {
+                        this.phase = 'DROPPED';
+                        STATE.failures++; // Count as failed request
+                    }
+                }
+                else if (this.phase === 'DROPPED') {
+                    this.y += 5;
+                    this.t++;
+                    if (this.t > 30) this.active = false;
+                }
+            }
+
+            draw(ctx) {
+                if (!this.active) return;
+                ctx.fillStyle = this.phase === 'DROPPED' ? '#ef4444' : this.color;
+
+                // Shape
+                if (this.type === 'DB') {
+                    ctx.fillRect(this.x - 3, this.y - 3, 6, 6);
+                } else {
+                    ctx.beginPath(); ctx.arc(this.x, this.y, 3, 0, Math.PI * 2); ctx.fill();
+                }
+            }
+        }
+
+        // Object Pool
+        const PACKETS = Array.from({ length: 1000 }, () => new Packet());
+        function spawnPacket(target, type) {
+            const p = PACKETS.find(p => !p.active);
+            if (p) p.spawn(CONFIG.GATEWAY_X, CONFIG.GATEWAY_Y, target, type);
+        }
+
+        // ---------------------------------------------------------------------------------
+        // CLASS: SERVER
+        // ---------------------------------------------------------------------------------
+        class Server {
+            constructor(id, x, y, weight = 1) {
+                this.id = id;
+                this.x = x; this.y = y;
+                this.weight = weight;
+                this.state = 'IDLE'; // IDLE, BUSY, OVERLOAD, DEAD
+                this.queue = [];
+                this.load = 0;
+                this.health = 100;
+                this.bootProgress = 0; // Animation
+            }
+
+            addRequest(pkt) {
+                if (this.state === 'DEAD') return;
+                if (this.queue.length >= CONFIG.MAX_QUEUE) {
+                    pkt.phase = 'DROPPED';
+                    STATE.dropped++;
+                    return;
+                }
+                this.queue.push(pkt);
+            }
+
+            kill() {
+                this.state = 'DEAD';
+                this.health = 0;
+                // Drop all queue
+                this.queue.forEach(p => p.phase = 'DROPPED');
+                this.queue = [];
+            }
+
+            update() {
+                if (this.state === 'DEAD') return;
+
+                // Processing
+                // Process 1st item in queue
+                if (this.queue.length > 0) {
+                    const pkt = this.queue[0];
+                    pkt.t++; // Increment processing time
+
+                    // Orbit Animation
+                    const radius = 25;
+                    const speed = 0.1;
+                    const angle = pkt.t * speed + (this.id);
+                    pkt.x = this.x + Math.cos(angle) * (radius + this.queue.indexOf(pkt) * 2);
+                    pkt.y = this.y + Math.sin(angle) * (radius * 0.5 + this.queue.indexOf(pkt)); // Isometric squish
+
+                    // Complete?
+                    if (pkt.t > pkt.procTime / this.weight) { // Faster if high weight
+                        pkt.active = false;
+                        this.queue.shift();
+                    }
+                }
+
+                // Update State
+                this.load = this.queue.length / CONFIG.MAX_QUEUE;
+                if (this.load > 0.8) this.state = 'OVERLOAD';
+                else if (this.load > 0) this.state = 'BUSY';
+                else this.state = 'IDLE';
+            }
+
+            draw(ctx) {
+                // ISO RACK DRAWING
+                const w = 40; const h = 50;
+                const top = '#1e293b';
+                const side1 = '#0f172a';
+                const side2 = '#334155';
+
+                let led = '#22c55e'; // Green
+                if (this.state === 'OVERLOAD') led = '#f97316'; // Orange
+                if (this.state === 'DEAD') led = '#ef4444'; // Red
+
+                // Base Oscillation if alive
+                const bob = this.state !== 'DEAD' ? Math.sin(Date.now() * 0.005 + this.id) * 2 : 0;
+                const dy = this.y + bob;
+
+                // Draw Rack (Isometric)
+                // Top
+                ctx.fillStyle = top;
+                ctx.beginPath();
+                ctx.moveTo(this.x, dy - h);
+                ctx.lineTo(this.x + w, dy - h + 10);
+                ctx.lineTo(this.x, dy - h + 20);
+                ctx.lineTo(this.x - w, dy - h + 10);
+                ctx.closePath(); ctx.fill(); ctx.stroke();
+
+                // Sides
+                ctx.fillStyle = side2;
+                ctx.beginPath();
+                ctx.moveTo(this.x - w, dy - h + 10);
+                ctx.lineTo(this.x, dy - h + 20);
+                ctx.lineTo(this.x, dy + 20);
+                ctx.lineTo(this.x - w, dy + 10);
+                ctx.closePath(); ctx.fill(); ctx.stroke();
+
+                ctx.fillStyle = side1;
+                ctx.beginPath();
+                ctx.moveTo(this.x, dy - h + 20);
+                ctx.lineTo(this.x + w, dy - h + 10);
+                ctx.lineTo(this.x + w, dy + 10);
+                ctx.lineTo(this.x, dy + 20);
+                ctx.closePath(); ctx.fill(); ctx.stroke();
+
+                // Status LED
+                ctx.fillStyle = led;
+                ctx.shadowBlur = 10; ctx.shadowColor = led;
+                ctx.beginPath(); ctx.arc(this.x, dy - h / 2, 2, 0, Math.PI * 2); ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Load Bar
+                if (this.state !== 'DEAD') {
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(this.x - 20, dy + 30, 40, 4);
+                    const loadCol = this.load < 0.5 ? '#22c55e' : '#ef4444';
+                    ctx.fillStyle = loadCol;
+                    ctx.fillRect(this.x - 20, dy + 30, 40 * this.load, 4);
+                } else {
+                    // X icon
+                    ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.moveTo(this.x - 10, dy - 10); ctx.lineTo(this.x + 10, dy + 10);
+                    ctx.moveTo(this.x + 10, dy - 10); ctx.lineTo(this.x - 10, dy + 10);
+                    ctx.stroke(); ctx.lineWidth = 1;
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------------------------
+        // SYSTEM LOGIC
+        // ---------------------------------------------------------------------------------
+
+        // Init Servers
+        function initServers() {
+            STATE.servers = [];
+            // Create 3x2 grid
+            for (let r = 0; r < 2; r++) {
+                for (let c = 0; c < 3; c++) {
+                    const x = CONFIG.SERVER_START_X + (c - r) * CONFIG.GRID_W / 2;
+                    const y = CONFIG.SERVER_START_Y + (c + r) * CONFIG.GRID_H / 2;
+                    // Weighted: Middle ones stronger
+                    const w = (c === 1) ? 2 : 1;
+                    STATE.servers.push(new Server(STATE.servers.length, x, y, w));
+                }
+            }
+        }
+
+        // Init Gateway
+        function drawGateway() {
+            const gx = CONFIG.GATEWAY_X;
+            const gy = CONFIG.GATEWAY_Y;
+
+            // Ring
+            ctx.strokeStyle = '#3b82f6';
+            ctx.lineWidth = 2;
+            const t = Date.now() * 0.002;
+
+            ctx.beginPath();
+            ctx.ellipse(gx, gy, 40, 20, 0, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Spinning segment
+            ctx.beginPath();
+            ctx.ellipse(gx, gy, 50, 25, t, 0, 1.5);
+            ctx.strokeStyle = '#22d3ee';
+            ctx.stroke();
+
+            // Label
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#fff';
+            ctx.fillText("GATEWAY", gx, gy + 45);
+        }
+
+        // Load Balancer Logic
+        let rrIndex = 0;
+        function routePacket() {
+            if (STATE.servers.length === 0) return;
+
+            const candidates = STATE.servers.filter(s => s.state !== 'DEAD');
+            if (candidates.length === 0) {
+                // All Dead
+                return; // Drop at source?
+            }
+
+            let target = null;
+
+            if (STATE.mode === 'RR') {
+                target = candidates[rrIndex % candidates.length];
+                rrIndex++;
+            }
+            else if (STATE.mode === 'LC') {
+                // Least Connections
+                target = candidates.reduce((prev, curr) =>
+                    curr.queue.length < prev.queue.length ? curr : prev
+                );
+            }
+            else if (STATE.mode === 'WEIGHTED') {
+                // Probabilistic based on weight (Simple implementation)
+                // or Least Conn / Weight ratio
+                target = candidates.reduce((prev, curr) =>
+                    (curr.queue.length / curr.weight) < (prev.queue.length / prev.weight) ? curr : prev
+                );
+            }
+
+            // Spawn
+            const type = Math.random() > 0.8 ? 'DB' : 'GET';
+            spawnPacket(target, type);
+        }
+
+        // Auto Scaling
+        function checkAutoScaling() {
+            const active = STATE.servers.filter(s => s.state !== 'DEAD');
+            if (active.length === 0) return;
+
+            const totalLoad = active.reduce((sum, s) => sum + s.load, 0) / active.length;
+            document.getElementById('avg-load').innerText = Math.floor(totalLoad * 100) + "%";
+
+            // If load > 70% and < 10 servers, add one
+            if (totalLoad > 0.7 && STATE.servers.length < 10 && STATE.frame % 100 === 0) {
+                // Add new server visually relative to last
+                const last = STATE.servers[STATE.servers.length - 1];
+                const newX = last.x + CONFIG.GRID_W / 2;
+                const newY = last.y + CONFIG.GRID_H / 2; // Zig zag? Na just linear out
+                STATE.servers.push(new Server(STATE.servers.length, newX, newY, 1.5));
+                // Flash message
+                const sys = document.getElementById('sys-status');
+                sys.innerText = "SCALING UP..."; sys.style.color = "#f97316";
+                setTimeout(() => { sys.innerText = "OPERATIONAL"; sys.style.color = "#22c55e"; }, 2000);
+            }
+        }
+
+        // Main Loop
+        function loop() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            CONFIG.GATEWAY_X = canvas.width * 0.2;
+            CONFIG.GATEWAY_Y = canvas.height * 0.5;
+            // Update Base Pos for resize
+            if (STATE.frame === 0) initServers();
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Packet Generation
+            // Normal traffic: 1 per 10 frames
+            // DDoS: 5 per frame
+            const rate = STATE.ddosMode ? 5 : (STATE.frame % 10 === 0 ? 1 : 0);
+            for (let i = 0; i < rate; i++) routePacket();
+
+            if (STATE.ddosMode && Math.random() > 0.95) STATE.ddosMode = false; // Stop eventually
+
+            // 2. Update & Draw Servers
+            STATE.servers.forEach(s => {
+                s.update();
+                s.draw(ctx);
+            });
+
+            // 3. Update & Draw Packets
+            PACKETS.forEach(p => {
+                p.update();
+                p.draw(ctx);
+            });
+
+            // 4. Gateway
+            drawGateway();
+
+            // 5. Connectors (Lines)
+            ctx.globalCompositeOperation = 'destination-over';
+            ctx.strokeStyle = 'rgba(59, 130, 246, 0.2)';
+            ctx.beginPath();
+            STATE.servers.forEach(s => {
+                ctx.moveTo(CONFIG.GATEWAY_X, CONFIG.GATEWAY_Y);
+                ctx.lineTo(s.x, s.y);
+            });
+            ctx.stroke();
+            ctx.globalCompositeOperation = 'source-over';
+
+            // 6. Stats & Logic
+            checkAutoScaling();
+            document.getElementById('active-nodes').innerText = STATE.servers.filter(s => s.state !== 'DEAD').length;
+            document.getElementById('drop-val').innerText = STATE.dropped;
+            document.getElementById('fail-val').innerText = STATE.failures;
+            document.getElementById('rps-val').innerText = STATE.ddosMode ? "500+" : "60";
+
+            STATE.frame++;
+            requestAnimationFrame(loop);
+        }
+
+        // Inputs
+        window.setMode = (m) => {
+            STATE.mode = m;
+            document.getElementById('lb-mode').innerText = m.replace('_', ' ');
+        };
+
+        window.triggerDDoS = () => {
+            STATE.ddosMode = true;
+            document.getElementById('sys-status').innerText = "⚠ DDoS DETECTED ⚠";
+            document.getElementById('sys-status').style.color = "#ef4444";
+        };
+
+        // Chaos Monkey Click
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+
+            // Check collisions with servers
+            STATE.servers.forEach(s => {
+                if (Math.abs(mx - s.x) < 30 && Math.abs(my - s.y) < 40) {
+                    s.kill();
+                }
+            });
+        });
+
+        initServers();
+        loop();
+
+    </script>
+</body>
+
+</html>

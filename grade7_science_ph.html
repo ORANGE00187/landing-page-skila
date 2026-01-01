@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Universal pH Lab</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .hud {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 20px;
+        }
+
+        .btn {
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #fff;
+            color: #fff;
+            padding: 15px 30px;
+            border-radius: 30px;
+            cursor: pointer;
+            font-size: 18px;
+            transition: all 0.2s;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .btn-acid {
+            border-color: #ef4444;
+            color: #ef4444;
+        }
+
+        .btn-acid:hover {
+            background: #ef4444;
+            color: #000;
+            box-shadow: 0 0 20px #ef4444;
+        }
+
+        .btn-base {
+            border-color: #8b5cf6;
+            color: #8b5cf6;
+        }
+
+        .btn-base:hover {
+            background: #8b5cf6;
+            color: #000;
+            box-shadow: 0 0 20px #8b5cf6;
+        }
+
+        .ph-meter {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 600px;
+            height: 60px;
+            background: #222;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 2px solid #555;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 30px;
+            color: white;
+            text-shadow: 0 2px 4px black;
+        }
+
+        .spectrum {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            opacity: 0.3;
+            background: linear-gradient(to right,
+                    #ef4444 0%,
+                    /* Acid pH 0 */
+                    #f97316 25%,
+                    #22c55e 50%,
+                    /* Neutral pH 7 */
+                    #3b82f6 75%,
+                    #a855f7 100%
+                    /* Base pH 14 */
+                );
+        }
+
+        .marker {
+            position: absolute;
+            bottom: 0;
+            width: 4px;
+            height: 100%;
+            background: white;
+            box-shadow: 0 0 10px white;
+            transition: left 0.5s ease-out;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="hud">
+        <button class="btn btn-acid" onmousedown="startDrop('acid')" onmouseup="stopDrop()">
+            <span>ADD ACID</span>
+            <span class="text-xs mt-1">H+ Ions</span>
+        </button>
+        <button class="btn btn-base" onmousedown="startDrop('base')" onmouseup="stopDrop()">
+            <span>ADD BASE</span>
+            <span class="text-xs mt-1">OH- Ions</span>
+        </button>
+        <button class="btn" onclick="drain()">RESET</button>
+    </div>
+
+    <div class="ph-meter">
+        <div class="spectrum"></div>
+        <div class="marker" id="ph-marker"></div>
+        <span id="ph-val" style="z-index: 10;">pH 7.00</span>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const phVal = document.getElementById('ph-val');
+        const phMarker = document.getElementById('ph-marker');
+
+        let width, height;
+
+        // Liquid Sim
+        let FLUID_LEVEL = 0.4; // % of beaker height
+        let MOLES_H = 1.0; // Starting Neutral (relative)
+        let MOLES_OH = 1.0;
+        let PH = 7.0;
+
+        // Visuals
+        let COLOR = { h: 120, s: 100, l: 50 }; // Green
+        let PARTICLES = [];
+        let RIPPLES = [];
+        let SPARKLES = [];
+
+        let DROP_TYPE = null;
+        let DROP_TIMER = 0;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        window.startDrop = (t) => { DROP_TYPE = t; drop(); };
+        window.stopDrop = () => DROP_TYPE = null;
+        window.drain = () => { FLUID_LEVEL = 0.4; MOLES_H = 1; MOLES_OH = 1; updatePH(); };
+
+        function drop() {
+            if (!DROP_TYPE) return;
+            // Spawn Drop Particle
+            const x = DROP_TYPE === 'acid' ? width * 0.35 : width * 0.65;
+            PARTICLES.push({
+                x: x, y: 0,
+                vx: 0, vy: 15,
+                type: DROP_TYPE,
+                color: DROP_TYPE === 'acid' ? '#ef4444' : '#a855f7',
+                size: 8
+            });
+
+            // Logic
+            if (DROP_TYPE === 'acid') MOLES_H += 0.1;
+            else MOLES_OH += 0.1;
+
+            FLUID_LEVEL = Math.min(0.9, FLUID_LEVEL + 0.001);
+
+            updatePH();
+
+            if (DROP_TYPE) setTimeout(drop, 100);
+        }
+
+        function updatePH() {
+            // Simplified Logarithmic Logic
+            // Ratio determines pH
+            // Neutral: Ratio = 1 -> pH 7
+            // Acidic: H > OH -> pH < 7
+            // Basic: OH > H -> pH > 7
+
+            const ratio = MOLES_H / MOLES_OH;
+            // pH = 7 - log10(ratio) * strength
+            // Let's fake realistic feel
+            PH = 7 - Math.log10(ratio) * 5;
+            PH = Math.max(0, Math.min(14, PH));
+
+            // Visual Update
+            phVal.innerText = `pH ${PH.toFixed(2)}`;
+            const p = (PH / 14) * 100;
+            phMarker.style.left = `${p}%`;
+
+            // Color Mapping
+            if (PH < 7) {
+                // Acid: Green (120) -> Red (0)
+                // Normalize 7->0 to 0->1
+                let f = (7 - PH) / 7; // 0 at pH7, 1 at pH0
+                let h = 120 - (f * 120);
+                COLOR = { h: h, s: 100, l: 50 };
+            } else {
+                // Base: Green (120) -> Purple (270)
+                let f = (PH - 7) / 7;
+                let h = 120 + (f * 150); // 120+150 = 270
+                COLOR = { h: h, s: 100, l: 50 };
+            }
+        }
+
+        function loop() {
+            ctx.fillStyle = '#111';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw Droppers
+            drawDropper(width * 0.35, 'ACID', '#ef4444');
+            drawDropper(width * 0.65, 'BASE', '#a855f7');
+
+            // Beaker
+            const bx = width / 2 - 200;
+            const by = height - 100;
+            const bw = 400;
+            const bh = 500;
+
+            // Liquid
+            const lh = bh * FLUID_LEVEL;
+            const surfaceY = by - lh;
+
+            // Back Glass
+            ctx.fillStyle = 'rgba(255,255,255,0.05)';
+            ctx.fillRect(bx, by - bh, bw, bh);
+
+            // Liquid Body
+            const fluidColor = `hsl(${COLOR.h}, ${COLOR.s}%, ${COLOR.l}%)`;
+            const glowColor = `hsl(${COLOR.h}, ${COLOR.s}%, 70%)`;
+
+            // Gradient fill
+            const grad = ctx.createLinearGradient(0, surfaceY, 0, by);
+            grad.addColorStop(0, glowColor);
+            grad.addColorStop(1, fluidColor);
+
+            ctx.fillStyle = grad;
+            ctx.fillRect(bx + 10, surfaceY, bw - 20, lh - 10);
+
+            // Surface Tension / Meniscus
+            ctx.fillStyle = glowColor;
+            ctx.beginPath();
+            // Wave effect?
+            // Simple flat for now + Ripple
+            ctx.rect(bx + 10, surfaceY, bw - 20, 5);
+            ctx.fill();
+
+            // Particles (Drops)
+            for (let i = PARTICLES.length - 1; i >= 0; i--) {
+                let p = PARTICLES[i];
+                p.y += p.vy;
+                p.vy += 0.5; // Gravity
+
+                // Draw
+                ctx.fillStyle = p.color;
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+
+                // Splash
+                if (p.y > surfaceY) {
+                    // Create Ripple
+                    // Make splash particles
+                    for (let j = 0; j < 5; j++) {
+                        SPARKLES.push({
+                            x: p.x, y: surfaceY,
+                            vx: (Math.random() - 0.5) * 10, vy: -Math.random() * 10,
+                            life: 1.0, color: p.color
+                        });
+                    }
+                    PARTICLES.splice(i, 1);
+
+                    // Fizz effect if reacting?
+                    // If Acid added to Base or vice versa
+                }
+            }
+
+            // Sparkles / Splash
+            for (let i = SPARKLES.length - 1; i >= 0; i--) {
+                let s = SPARKLES[i];
+                s.x += s.vx; s.y += s.vy;
+                s.vy += 0.5;
+                s.life -= 0.05;
+
+                ctx.fillStyle = s.color; ctx.globalAlpha = s.life;
+                ctx.beginPath(); ctx.arc(s.x, s.y, 3, 0, Math.PI * 2); ctx.fill();
+                ctx.globalAlpha = 1;
+
+                if (s.life <= 0) SPARKLES.splice(i, 1);
+            }
+
+            // Beaker Outline (Front)
+            ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(bx, by - bh); ctx.lineTo(bx, by); ctx.lineTo(bx + bw, by); ctx.lineTo(bx + bw, by - bh);
+            ctx.stroke();
+
+            // Bubbles (Fizz)
+            // Procedural bubbles rising
+            if (Math.random() > 0.8) {
+                SPARKLES.push({
+                    x: bx + 20 + Math.random() * (bw - 40),
+                    y: by - 10,
+                    vx: 0, vy: -2 - Math.random() * 2,
+                    life: 1, color: 'rgba(255,255,255,0.5)', msg: true
+                });
+            }
+            // Bubbles update logic reused? No, need specific
+
+            requestAnimationFrame(loop);
+        }
+
+        function drawDropper(x, label, color) {
+            const y = 50;
+            ctx.fillStyle = '#333';
+            ctx.fillRect(x - 10, y, 20, 100);
+            // Bulb
+            ctx.fillStyle = color;
+            ctx.beginPath(); ctx.arc(x, y, 25, 0, Math.PI * 2); ctx.fill();
+            // Tip
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.beginPath(); ctx.moveTo(x - 10, y + 100); ctx.lineTo(x, y + 130); ctx.lineTo(x + 10, y + 100); ctx.fill();
+        }
+
+        loop();
+
+    </script>
+</body>
+
+</html>

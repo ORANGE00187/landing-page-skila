@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Stratigraphy Drill</title>
+    <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Courier Prime', monospace;
+            cursor: crosshair;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .timeline {
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 60px;
+            background: rgba(0, 0, 0, 0.8);
+            border-left: 2px solid #555;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            color: #fff;
+            text-align: right;
+            padding-right: 5px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="timeline">
+        <div>2025 AD</div>
+        <div>1500 AD</div>
+        <div>100 AD</div>
+        <div>1000 BC</div>
+        <div>3000 BC</div>
+        <div>Pre-K</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Layers
+        let layersCanvas = document.createElement('canvas'); // Offscreen
+        let lCtx = layersCanvas.getContext('2d');
+
+        let width, height;
+
+        // Artifacts
+        const ARTIFACTS = [
+            { x: 200, y: 150, r: 20, name: 'Smartphone', color: '#333', found: false },
+            { x: 500, y: 350, r: 30, name: 'Clay Pot', color: '#d97706', found: false },
+            { x: 300, y: 600, r: 25, name: 'Gold Coin', color: '#fbbf24', found: false },
+            { x: 700, y: 800, r: 40, name: 'Dino Bone', color: '#e5e7eb', found: false }
+        ];
+
+        // Mouse
+        let MOUSE = { x: -100, y: -100, down: false };
+        let TOOLS = { active: 'drill' }; // or scan
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+
+            // Setup Layers
+            layersCanvas.width = width; layersCanvas.height = height;
+
+            // Draw Geological Layers
+            // 1. Topsoil (Modern)
+            lCtx.fillStyle = '#4ade80'; lCtx.fillRect(0, 0, width, 100);
+            // 2. Dirt (Medieval)
+            lCtx.fillStyle = '#854d0e'; lCtx.fillRect(0, 100, width, 200);
+            // 3. Clay (Ancient)
+            lCtx.fillStyle = '#b45309'; lCtx.fillRect(0, 300, width, 250);
+            // 4. Stone (Prehistoric)
+            lCtx.fillStyle = '#57534e'; lCtx.fillRect(0, 550, width, 250);
+            // 5. Bedrock
+            lCtx.fillStyle = '#292524'; lCtx.fillRect(0, 800, width, height - 800);
+
+            // Hide Artifacts "Under" dirt? 
+            // Actually, we want to erase dirt to reveal background?
+            // Or erase dirt to reveal artifacts embedded.
+
+            // Let's render artifacts on Main Canvas, and overlay Layers on top.
+            // Erasing layers reveals bottom.
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        canvas.addEventListener('mousedown', () => MOUSE.down = true);
+        window.addEventListener('mouseup', () => MOUSE.down = false);
+        canvas.addEventListener('mousemove', e => { MOUSE.x = e.clientX; MOUSE.y = e.clientY; });
+
+        function loop() {
+            // Logic: Digging
+            if (MOUSE.down) {
+                lCtx.globalCompositeOperation = 'destination-out';
+                lCtx.beginPath();
+                lCtx.arc(MOUSE.x, MOUSE.y, 30, 0, Math.PI * 2);
+                lCtx.fill();
+                lCtx.globalCompositeOperation = 'source-over';
+
+                // Add particles effect
+                // ...
+            }
+
+            // Render
+            // 1. Background (Deep Earth / Hole)
+            ctx.fillStyle = '#111'; ctx.fillRect(0, 0, width, height);
+
+            // 2. Artifacts (Hidden unless dug)
+            ARTIFACTS.forEach(a => {
+                // If revealed (checked by collision with mouse when clicking?)
+                // Just draw them. The dirt layer covers them.
+
+                ctx.fillStyle = a.color;
+                ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2); ctx.fill();
+
+                // If exposed?
+                // Check transparency pixel at location?
+                // Expensive. Just assume visually.
+
+                // Scan effect (X-Ray)
+                // Draw sonar outline if mouse near
+                if (Math.hypot(MOUSE.x - a.x, MOUSE.y - a.y) < 150) {
+                    ctx.strokeStyle = 'white'; ctx.setLineDash([2, 2]);
+                    ctx.beginPath(); ctx.arc(a.x, a.y, a.r + 5, 0, Math.PI * 2); ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+            });
+
+            // 3. Draw Dirt Layers (The Mask)
+            ctx.drawImage(layersCanvas, 0, 0);
+
+            // 4. Cursor / Tool
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(MOUSE.x, MOUSE.y, 30, 0, Math.PI * 2); ctx.stroke();
+            // Crosshair
+            ctx.beginPath(); ctx.moveTo(MOUSE.x - 10, MOUSE.y); ctx.lineTo(MOUSE.x + 10, MOUSE.y); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(MOUSE.x, MOUSE.y - 10); ctx.lineTo(MOUSE.x, MOUSE.y + 10); ctx.stroke();
+
+            // Depth text
+            ctx.fillStyle = '#fff';
+            // Calc Depth
+            let era = "Modern";
+            if (MOUSE.y > 100) era = "1500 AD";
+            if (MOUSE.y > 300) era = "100 AD";
+            if (MOUSE.y > 550) era = "3000 BC";
+            if (MOUSE.y > 800) era = "Prehistoric";
+            ctx.fillText(era, MOUSE.x + 40, MOUSE.y);
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+
+    </script>
+</body>
+
+</html>

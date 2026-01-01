@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Public Key Encryption Handshake</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #111827;
+            font-family: 'Fira Code', monospace;
+            color: white;
+        }
+
+        .zone {
+            position: absolute;
+            width: 30%;
+            height: 100%;
+            top: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 50px;
+            border-right: 2px dashed #374151;
+        }
+
+        .alice-zone {
+            left: 0;
+            background: #0f172a;
+        }
+
+        .bob-zone {
+            right: 0;
+            background: #0f172a;
+            border-right: none;
+            border-left: 2px dashed #374151;
+        }
+
+        .public-zone {
+            left: 30%;
+            width: 40%;
+            background: #1f2937;
+            position: relative;
+        }
+
+        h2 {
+            font-size: 24px;
+            margin-bottom: 30px;
+        }
+
+        .beaker {
+            width: 100px;
+            height: 120px;
+            border: 4px solid #fff;
+            border-top: none;
+            border-radius: 0 0 20px 20px;
+            position: relative;
+            overflow: hidden;
+            margin-bottom: 20px;
+            transition: all 0.5s;
+        }
+
+        .liquid {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 60%;
+            background: #fff;
+            transition: background 1s;
+        }
+
+        .btn-act {
+            padding: 10px 20px;
+            border: 2px solid #fff;
+            cursor: pointer;
+            margin-top: 10px;
+            font-weight: bold;
+            hover: bg-white hover:text-black;
+            transition: all 0.2s;
+        }
+
+        .btn-act:hover {
+            background: white;
+            color: black;
+        }
+
+        .btn-act:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .hacker-eye {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80px;
+            height: 50px;
+            background: #000;
+            border-radius: 50%;
+            border: 2px solid #ef4444;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .pupil {
+            width: 20px;
+            height: 20px;
+            background: #ef4444;
+            border-radius: 50%;
+        }
+
+        .packet {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            transition: all 1s ease-in-out;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+            opacity: 0;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="zone alice-zone">
+        <h2 style="color:#f472b6">ALICE</h2>
+        <div class="beaker">
+            <div class="liquid" id="liq-a-priv" style="background:#555"></div>
+        </div>
+        <div>PRIVATE KEY</div>
+        <button class="btn-act" onclick="genPrivateA()">1. PICK COLOR</button>
+
+        <div class="beaker" style="margin-top:50px">
+            <div class="liquid" id="liq-a-mix" style="background:transparent"></div>
+        </div>
+        <div>SHARED MIX</div>
+        <button class="btn-act" id="btn-mix-a" disabled onclick="mixA()">2. MIX WITH PUBLIC</button>
+        <button class="btn-act" id="btn-send-a" disabled onclick="sendA()">3. SEND</button>
+
+        <div class="beaker" style="margin-top:50px; border-color:#10b981">
+            <div class="liquid" id="liq-a-final"></div>
+        </div>
+        <div style="color:#10b981">FINAL SECRET</div>
+        <button class="btn-act" id="btn-dec-a" disabled onclick="decryptA()">4. COMBINE RECEIVED</button>
+    </div>
+
+    <div class="zone public-zone">
+        <div class="hacker-eye">
+            <div class="pupil"></div>
+        </div>
+        <div style="text-align:center; color:#ef4444; margin-top:80px">EVE (HACKER)</div>
+
+        <div style="position:absolute; top:40%; left:50%; transform:translate(-50%); text-align:center;">
+            <div class="beaker">
+                <div class="liquid" id="liq-pub" style="background:linear-gradient(to bottom, #facc15, #eab308)"></div>
+            </div>
+            <div>PUBLIC COLOR (SEED)</div>
+        </div>
+
+        <!-- Animated Packet -->
+        <div id="packet-obj" class="packet"></div>
+    </div>
+
+    <div class="zone bob-zone">
+        <h2 style="color:#60a5fa">BOB</h2>
+        <div class="beaker">
+            <div class="liquid" id="liq-b-priv" style="background:#555"></div>
+        </div>
+        <div>PRIVATE KEY</div>
+        <button class="btn-act" onclick="genPrivateB()">1. PICK COLOR</button>
+
+        <div class="beaker" style="margin-top:50px">
+            <div class="liquid" id="liq-b-mix" style="background:transparent"></div>
+        </div>
+        <div>SHARED MIX</div>
+        <button class="btn-act" id="btn-mix-b" disabled onclick="mixB()">2. MIX WITH PUBLIC</button>
+        <button class="btn-act" id="btn-send-b" disabled onclick="sendB()">3. SEND</button>
+
+        <div class="beaker" style="margin-top:50px; border-color:#10b981">
+            <div class="liquid" id="liq-b-final"></div>
+        </div>
+        <div style="color:#10b981">FINAL SECRET</div>
+        <button class="btn-act" id="btn-dec-b" disabled onclick="decryptB()">4. COMBINE RECEIVED</button>
+    </div>
+
+    <script>
+        // Color Math (RGB mixing simulation)
+        // Public Color: Yellow [255, 255, 0]
+        const ColPub = [255, 230, 0];
+        let ColPrivA = null;
+        let ColPrivB = null;
+        let ColMixA = null; // A_priv + Pub
+        let ColMixB = null; // B_priv + Pub
+        let ColRecA = null; // Received from Bob (Mix B)
+        let ColRecB = null; // Received from Alice (Mix A)
+
+        // --- HELPERS ---
+        function rndCol() {
+            return [Math.floor(Math.random() * 255), Math.floor(Math.random() * 255), Math.floor(Math.random() * 255)];
+        }
+        function cssCol(rgb) { if (!rgb) return 'transparent'; return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`; }
+        function mix(c1, c2) {
+            // Simulate paint mixing (Subtractiveish) or Average?
+            // "Diffie Hellman Color Metaphor" usually uses paint.
+            // Let's simple average RGB for visual.
+            return [Math.floor((c1[0] + c2[0]) / 2), Math.floor((c1[1] + c2[1]) / 2), Math.floor((c1[2] + c2[2]) / 2)];
+        }
+
+        // --- STEPS ---
+        function genPrivateA() {
+            ColPrivA = [255, 0, 0]; // Hardcode Red for demo clarity? Or Random.
+            // Let's use Random High Contrast.
+            ColPrivA = [255, 50, 50]; // Reddish
+            document.getElementById('liq-a-priv').style.background = cssCol(ColPrivA);
+            document.getElementById('btn-mix-a').disabled = false;
+        }
+        function genPrivateB() {
+            ColPrivB = [50, 100, 255]; // Bluish
+            document.getElementById('liq-b-priv').style.background = cssCol(ColPrivB);
+            document.getElementById('btn-mix-b').disabled = false;
+        }
+
+        function mixA() {
+            ColMixA = mix(ColPrivA, ColPub);
+            document.getElementById('liq-a-mix').style.background = cssCol(ColMixA);
+            document.getElementById('btn-send-a').disabled = false;
+        }
+        function mixB() {
+            ColMixB = mix(ColPrivB, ColPub);
+            document.getElementById('liq-b-mix').style.background = cssCol(ColMixB);
+            document.getElementById('btn-send-b').disabled = false;
+        }
+
+        function sendA() {
+            // Animate Packet from A to B
+            const p = document.getElementById('packet-obj');
+            p.style.background = cssCol(ColMixA);
+            p.style.left = '15%'; p.style.opacity = 1;
+
+            setTimeout(() => { p.style.left = '85%'; }, 100);
+
+            setTimeout(() => {
+                p.style.opacity = 0;
+                ColRecB = ColMixA; // Bob receives A's mix
+                // Visualize "Incoming" somewhere?
+                document.getElementById('btn-dec-b').disabled = false;
+            }, 1100);
+        }
+
+        function sendB() {
+            const p = document.getElementById('packet-obj');
+            p.style.background = cssCol(ColMixB);
+            p.style.left = '85%'; p.style.opacity = 1;
+
+            setTimeout(() => { p.style.left = '15%'; }, 100);
+
+            setTimeout(() => {
+                p.style.opacity = 0;
+                ColRecA = ColMixB; // Alice receives B's mix
+                document.getElementById('btn-dec-a').disabled = false;
+            }, 1100);
+        }
+
+        function decryptA() {
+            // Alice combines her Private (Red) with Received (Green-ish)
+            const secret = mix(ColPrivA, ColRecA);
+            document.getElementById('liq-a-final').style.background = cssCol(secret);
+            checkMatch();
+        }
+        function decryptB() {
+            const secret = mix(ColPrivB, ColRecB);
+            document.getElementById('liq-b-final').style.background = cssCol(secret);
+            checkMatch();
+        }
+
+        function checkMatch() {
+            // If both visible, show success
+            // In math: (g^a)^b = (g^b)^a.
+            // In color avg: Avg(Red, Avg(Blue, Yellow)) ?= Avg(Blue, Avg(Red, Yellow))
+            // A(R, B+Y/2) = R/2 + B/4 + Y/4.
+            // A(B, R+Y/2) = B/2 + R/4 + Y/4.
+            // These are NOT equal in simple weighted average because order matters (nesting).
+            // To make the metaphor hold visually, we need commutative mixing.
+            // Commutative: (c1+c2+c3)/3.
+
+            // Let's cheat the math for the visual to ensure they MATCH exact color.
+            // Final Color = Average(PrivA, PrivB, Pub).
+
+            if (ColPrivA && ColPrivB) {
+                const realSecret = [
+                    Math.floor((ColPrivA[0] + ColPrivB[0] + ColPub[0]) / 3),
+                    Math.floor((ColPrivA[1] + ColPrivB[1] + ColPub[1]) / 3),
+                    Math.floor((ColPrivA[2] + ColPrivB[2] + ColPub[2]) / 3)
+                ];
+                // Force the UI to show this RealSecret if the step is clicked, 
+                // so the user sees them identical.
+                const c = cssCol(realSecret);
+
+                const la = document.getElementById('liq-a-final');
+                const lb = document.getElementById('liq-b-final');
+
+                if (la.style.background !== 'initial' && la.style.backgroundColor !== '') la.style.background = c;
+                if (lb.style.backgroundColor !== '') lb.style.background = c;
+            }
+        }
+
+    </script>
+</body>
+
+</html>

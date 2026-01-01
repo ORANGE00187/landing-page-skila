@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Day & Night</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #020617;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+        }
+
+        #canvas:active {
+            cursor: grabbing;
+        }
+
+        .ui {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translate(-50%, 0);
+            color: white;
+            text-align: center;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="ui">
+        <h1 class="text-3xl font-bold mb-2">Earth Spin 🌍</h1>
+        <p class="text-slate-400">Drag to spin the world!</p>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+        let ROTATION = 0; // 0 to 360
+        let IS_DRAGGING = false;
+        let LAST_X = 0;
+
+        // Colors
+        const OCEAN = '#0ea5e9';
+        const LAND = '#22c55e';
+        const NIGHT_SHADOW = 'rgba(0,0,0,0.85)';
+
+        // Simple procedural continents (fake texture)
+        const CONTINENTS = Array.from({ length: 20 }, () => ({
+            x: Math.random() * 360, // Longitude
+            y: (Math.random() - 0.5) * 140, // Latitude
+            r: Math.random() * 30 + 10,
+            city: Math.random() > 0.3 // Does it have lights?
+        }));
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        canvas.addEventListener('mousedown', e => { IS_DRAGGING = true; LAST_X = e.clientX; });
+        window.addEventListener('mouseup', () => IS_DRAGGING = false);
+        window.addEventListener('mousemove', e => {
+            if (IS_DRAGGING) {
+                const dx = e.clientX - LAST_X;
+                ROTATION = (ROTATION + dx * 0.5) % 360;
+                if (ROTATION < 0) ROTATION += 360;
+                LAST_X = e.clientX;
+            }
+        });
+
+        function loop() {
+            // Bg Stars
+            ctx.fillStyle = '#020617';
+            ctx.fillRect(0, 0, width, height);
+            // Random Stars
+            ctx.fillStyle = 'white';
+            for (let i = 0; i < 50; i++) {
+                // Static seed
+                const x = (i * 137) % width;
+                const y = (i * 59) % height;
+                ctx.fillRect(x, y, Math.random() * 2, Math.random() * 2);
+            }
+
+            // Sun (Left side)
+            const cx = width / 2;
+            const cy = height / 2;
+            const R = 200; // Earth Radius
+
+            // Sun Glow
+            let sunGrad = ctx.createRadialGradient(cx - 400, cy, 50, cx - 300, cy, 300);
+            sunGrad.addColorStop(0, '#fef3c7');
+            sunGrad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = sunGrad;
+            ctx.fillRect(0, 0, cx, height);
+
+            // --- DRAW EARTH ---
+            ctx.save();
+            ctx.translate(cx, cy);
+
+            // Sphere Mask
+            ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2);
+            ctx.clip();
+
+            // Ocean
+            ctx.fillStyle = OCEAN;
+            ctx.fillRect(-R, -R, R * 2, R * 2);
+
+            // Continents
+            CONTINENTS.forEach(c => {
+                // Calculate visible X
+                let lon = c.x + ROTATION;
+                if (lon > 360) lon -= 360;
+
+                // Map to 2D
+                // This is a super simplified projection (not real 3D)
+                // Visible range: 90 to 270 (backside hidden)
+                // Wait, wrap around: 0-360.
+
+                let relLon = lon; // 0 to 360
+
+                // Only draw if on front side (simplified)
+                // Let's say front is 270-90
+
+                let drawX = (relLon - 180) * 1.5; // Stretch
+
+                // Wrap logic for drawing
+                let visible = true;
+                if (relLon > 90 && relLon < 270) visible = false; // Backside
+
+                // Actually, let's just draw everything and clip? No, need masking for lights.
+                // Simple version:
+                let x = Math.cos((relLon * Math.PI) / 180) * R;
+                let z = Math.sin((relLon * Math.PI) / 180) * R;
+
+                if (z > 0) { // Front face
+                    ctx.fillStyle = LAND;
+                    ctx.beginPath(); ctx.arc(x, c.y, c.r, 0, Math.PI * 2); ctx.fill();
+
+                    // City Lights (If in shadow)
+                    // Shadow is on the RIGHT side (if Sun is LEFT)
+                    // Sun is at -Infinity X.
+                    // So any point with positive X is illuminated?
+                    // No, sphere logic. Normal vector.
+                    // If x > 0 (Right side), it's far from sun? 
+                    // Let's visualize: Sun is Left. So Left side of Earth is Lit. Right side is Dark.
+                    // x range -R to +R. 
+                    // Lit: x < 0. Dark: x > 0.
+
+                    if (x > 20 && c.city) {
+                        ctx.fillStyle = '#fbbf24'; // Yellow Light
+                        ctx.beginPath(); ctx.arc(x, c.y, 3, 0, Math.PI * 2); ctx.fill();
+                    }
+                }
+            });
+
+            // --- SHADOW OVERLAY ---
+            // Sun is on Left. Right side is dark.
+            // Gradient from left (transparent) to right (black)
+            let shadowGrad = ctx.createLinearGradient(-R, 0, R, 0);
+            shadowGrad.addColorStop(0, 'rgba(0,0,0,0)');
+            shadowGrad.addColorStop(0.4, 'rgba(0,0,0,0.1)');
+            shadowGrad.addColorStop(0.6, 'rgba(0,0,0,0.6)');
+            shadowGrad.addColorStop(1, 'rgba(0,0,0,0.9)');
+
+            ctx.fillStyle = shadowGrad;
+            ctx.fillRect(-R, -R, R * 2, R * 2);
+
+            // Atmosphere Halo (Inner)
+            ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(100, 200, 255, 0.3)';
+            ctx.lineWidth = 10;
+            ctx.stroke();
+
+            ctx.restore();
+
+            // Rotation Inertia
+            if (!IS_DRAGGING) ROTATION = (ROTATION + 0.2) % 360;
+
+            requestAnimationFrame(loop);
+        }
+        loop();
+    </script>
+</body>
+
+</html>

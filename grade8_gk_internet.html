@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Skila.ai | Internet Packet Matrix</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Share Tech Mono', monospace;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .ui {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+        }
+
+        input {
+            background: #111;
+            border: 1px solid #333;
+            color: #0f0;
+            padding: 10px;
+            width: 200px;
+        }
+
+        button {
+            background: #0f0;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .server-screen {
+            position: absolute;
+            top: 100px;
+            right: 50px;
+            width: 200px;
+            height: 150px;
+            background: #111;
+            border: 2px solid #333;
+            color: #0f0;
+            padding: 10px;
+            overflow: hidden;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+
+    <div class="server-screen" id="server-disp">
+        SERVER LOG:
+        <br>Waiting for packets...
+    </div>
+
+    <div class="ui">
+        <input type="text" id="msg" placeholder="Type Message..." maxlength="10">
+        <button onclick="send()">SEND</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const log = document.getElementById('server-disp');
+        const inp = document.getElementById('msg');
+
+        let width, height;
+
+        // Graph
+        let NODES = [];
+        let EDGES = [];
+        let PACKETS = [];
+
+        // Endpoints
+        let CLIENT = null;
+        let SERVER = null;
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            generateMap();
+        }
+        window.addEventListener('resize', resize);
+
+        function generateMap() {
+            NODES = []; EDGES = [];
+            // Grid of nodes
+            const cols = 6; const rows = 4;
+            const dx = width / (cols + 1);
+            const dy = height / (rows + 1);
+
+            for (let y = 0; y < rows; y++) {
+                for (let x = 0; x < cols; x++) {
+                    NODES.push({
+                        x: dx + x * dx + (Math.random() - 0.5) * 50,
+                        y: dy + y * dy + (Math.random() - 0.5) * 50,
+                        id: NODES.length,
+                        active: true // can be "cut"
+                    });
+                }
+            }
+
+            // Connect Neighbors
+            NODES.forEach((n, i) => {
+                // Connect to random nearby nodes
+                // Right
+                if ((i + 1) % cols !== 0) connect(n, NODES[i + 1]);
+                // Down
+                if (i + cols < NODES.length) connect(n, NODES[i + cols]);
+                // Diagonal Random
+                if (Math.random() > 0.7 && i + cols + 1 < NODES.length) connect(n, NODES[i + cols + 1]);
+            });
+
+            CLIENT = NODES[0];
+            SERVER = NODES[NODES.length - 1];
+
+            CLIENT.type = 'CLIENT';
+            SERVER.type = 'SERVER';
+        }
+
+        function connect(a, b) {
+            EDGES.push({ a, b, active: true });
+        }
+
+        // Interaction: Cut Wires
+        let MOUSE = { x: 0, y: 0 };
+        canvas.addEventListener('mousemove', e => { MOUSE.x = e.clientX; MOUSE.y = e.clientY; });
+        canvas.addEventListener('mousedown', () => {
+            // Check if near edge
+            let cut = EDGES.find(e => {
+                // distance point to segment
+                return distToSegment(MOUSE, e.a, e.b) < 10;
+            });
+            if (cut) cut.active = !cut.active; // Toggle
+        });
+
+        function distToSegment(p, v, w) {
+            // ... math helper
+            const l2 = (v.x - w.x) ** 2 + (v.y - w.y) ** 2;
+            if (l2 == 0) return Math.hypot(p.x - v.x, p.y - v.y);
+            let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+            t = Math.max(0, Math.min(1, t));
+            return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
+        }
+
+        window.send = () => {
+            const txt = inp.value;
+            if (!txt) return;
+            log.innerHTML = "Receiving...";
+
+            // Fragment
+            for (let i = 0; i < txt.length; i++) {
+                setTimeout(() => {
+                    spawnPacket(txt[i], i, txt.length);
+                }, i * 200);
+            }
+        };
+
+        function spawnPacket(char, idx, total) {
+            PACKETS.push({
+                char, idx, total,
+                curr: CLIENT,
+                target: SERVER,
+                path: [], // calc path
+                progress: 0,
+                color: `hsl(${Math.random() * 360}, 100%, 50%)`
+            });
+        }
+
+        function getPath(start, end) {
+            // BFS/Dijkstra
+            // Reset
+            NODES.forEach(n => { n.parent = null; n.visited = false; });
+            let q = [start];
+            start.visited = true;
+
+            while (q.length > 0) {
+                let curr = q.shift();
+                if (curr === end) {
+                    // Reconstruct
+                    let path = [];
+                    let temp = end;
+                    while (temp) { path.unshift(temp); temp = temp.parent; }
+                    return path;
+                }
+
+                // Neighbors
+                let neighbors = [];
+                EDGES.forEach(e => {
+                    if (!e.active) return;
+                    if (e.a === curr) neighbors.push(e.b);
+                    if (e.b === curr) neighbors.push(e.a);
+                });
+
+                neighbors.forEach(n => {
+                    if (!n.active) return; // cut node?
+                    if (!n.visited) {
+                        n.visited = true;
+                        n.parent = curr;
+                        q.push(n);
+                    }
+                });
+            }
+            return null; // No path
+        }
+
+        function loop() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw Edges
+            ctx.lineWidth = 2;
+            EDGES.forEach(e => {
+                ctx.strokeStyle = e.active ? '#333' : '#100'; // Dim red if cut
+                ctx.beginPath(); ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y); ctx.stroke();
+            });
+
+            // Draw Nodes
+            NODES.forEach(n => {
+                ctx.fillStyle = n.type === 'CLIENT' ? '#00f' : (n.type === 'SERVER' ? '#0f0' : '#222');
+                ctx.beginPath(); ctx.arc(n.x, n.y, 8, 0, Math.PI * 2); ctx.fill();
+            });
+
+            // Packets
+            for (let i = PACKETS.length - 1; i >= 0; i--) {
+                let p = PACKETS[i];
+
+                // Logic
+                if (p.path.length === 0 || !p.path[1]) {
+                    // Need path
+                    let newPath = getPath(p.curr, p.target);
+                    if (newPath) {
+                        p.path = newPath;
+                        p.pathIndex = 0; // 0 is curr
+                    } else {
+                        // Stuck
+                        ctx.fillStyle = 'red'; ctx.fillText("LOST", p.curr.x, p.curr.y - 20);
+                        continue;
+                    }
+                }
+
+                // Move towards next node in path
+                let next = p.path[1];
+                // Check if connection exists still
+                let edge = EDGES.find(e => (e.a === p.curr && e.b === next) || (e.b === p.curr && e.a === next));
+                if (!edge || !edge.active) {
+                    p.path = []; // Recalc
+                    continue;
+                }
+
+                // Interp
+                p.progress += 0.02;
+                if (p.progress >= 1) {
+                    p.curr = next;
+                    p.progress = 0;
+                    p.path.shift(); // Remove visited
+
+                    if (p.curr === p.target) {
+                        // Arrived
+                        log.innerHTML += `<span style="color:${p.color}">${p.char}</span>`;
+                        PACKETS.splice(i, 1);
+                        continue;
+                    }
+                }
+
+                // Draw
+                // Lerp
+                let lx = p.curr.x + (next.x - p.curr.x) * p.progress;
+                let ly = p.curr.y + (next.y - p.curr.y) * p.progress;
+
+                ctx.fillStyle = p.color;
+                ctx.fillRect(lx - 5, ly - 5, 10, 10);
+                ctx.fillStyle = '#fff'; ctx.font = '10px monospace';
+                ctx.fillText(p.char, lx - 3, ly + 3);
+            }
+
+            requestAnimationFrame(loop);
+        }
+
+        resize();
+        generateMap();
+        loop();
+
+    </script>
+</body>
+
+</html>
